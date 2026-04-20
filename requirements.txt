@@ -1,0 +1,40 @@
+# ====== Voice AI Assistant - MVP 0.1 dependencies ======
+# Target: Python 3.10-3.11 on Windows 10, CUDA 12.x
+
+# --- STT ---
+openai-whisper==20240930
+# faster-whisper - optional alternative for speed/VRAM; keep whisper as primary per spec
+
+# --- LLM ---
+httpx==0.27.2
+requests==2.32.3
+
+# --- TTS ---
+# Используем поддерживаемый форк `coqui-tts` (ex-Coqui TTS). Оригинальный
+# `TTS==0.22.0` не совместим с torch>=2.1 и давно не обновляется. Форк совместим
+# с torch 2.6 и сохраняет тот же публичный API (`from TTS.api import TTS`).
+coqui-tts>=0.27,<0.28
+# transformers<5: в 5.x удалён `isin_mps_friendly`, на который ссылается
+# tortoise-код внутри coqui-tts (TTS/tts/layers/tortoise/autoregressive.py).
+# При `pip install coqui-tts` соберётся transformers 5.x — зажимаем явно.
+transformers>=4.57,<5
+
+# --- Audio I/O ---
+sounddevice==0.4.7
+pyaudio==0.2.14
+soundfile==0.12.1
+
+# --- Audio processing ---
+numpy==1.26.4               # pin <2.0 for TTS/whisper compatibility
+librosa==0.10.2.post1
+scipy==1.13.1
+
+# --- Validation / data ---
+pydantic==2.9.2
+
+# --- Testing ---
+pytest==8.3.3
+pytest-mock==3.14.0
+
+# --- Dev / tooling ---
+# (UI uses stdlib tkinter; logging uses stdlib logging)

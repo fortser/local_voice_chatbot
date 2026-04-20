@@ -1,0 +1,4 @@
+@echo off
+set HTTP_PROXY=http://LG11493:PS09228@159.255.38.108:8080
+set HTTPS_PROXY=http://LG11493:PS09228@159.255.38.108:8080
+wt cmd /k claude
