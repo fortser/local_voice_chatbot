@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from typing import Callable, Iterable, Sequence
 
 from config import (
@@ -232,6 +233,12 @@ class WakeWordListener:
             self._play_beep(self._beep_on)
 
             self._emit(STATE_WAKE_ACTIVE)
+            # Восстанавливаем «свежий» порог после дрейфа во время
+            # сканирующих итераций, и даём 200 мс тишины, чтобы хвост
+            # бипа / реверберация динамиков в комнате успели затухнуть
+            # до начала активной записи.
+            vad.reset_threshold()
+            time.sleep(0.2)
             try:
                 question_wav = vad.record_until_silence(
                     max_duration=self._active_timeout + 30.0,

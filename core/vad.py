@@ -66,6 +66,11 @@ class VoiceActivityDetector:
 
         self._threshold = float(min_threshold)
         self._noise_rms = 0.0
+        # Значение порога сразу после последней успешной calibrate(). Нужно,
+        # чтобы после долгого сканирующего цикла (где threshold дрейфует вниз
+        # к MIN_ENERGY_THRESHOLD) можно было восстановить «свежий» порог
+        # перед активной фазой — см. reset_threshold().
+        self._calibrated_threshold: float | None = None
 
     # ---- public state ----
 
@@ -76,6 +81,17 @@ class VoiceActivityDetector:
     @property
     def noise_rms(self) -> float:
         return self._noise_rms
+
+    def reset_threshold(self) -> None:
+        """Вернуть порог к значению последней calibrate().
+
+        Во время длинного цикла сканирования (wake-word) динамический drift
+        тянет порог вниз к ``MIN_ENERGY_THRESHOLD``; при таком низком пороге
+        случайный клик триггерит ложный onset. Вызывайте перед активной
+        фазой, чтобы начать с «калибровочного» значения.
+        """
+        if self._calibrated_threshold is not None:
+            self._threshold = self._calibrated_threshold
 
     # ---- operations ----
 
@@ -126,6 +142,7 @@ class VoiceActivityDetector:
         )
         self._noise_rms = avg_rms
         self._threshold = float(threshold)
+        self._calibrated_threshold = float(threshold)
         logger.info(
             "Calibration done: samples=%d, max=%.1f, avg=%.1f, threshold=%.1f",
             len(rms_values),

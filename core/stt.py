@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -39,6 +40,42 @@ from utils.errors import STTError
 _WHISPER_SR = 16000
 
 logger = logging.getLogger(__name__)
+
+# Известные фразы-галлюцинации русскоязычного Whisper (особенно large-v3)
+# на тишине / очень коротком / шумном входе. Возникают потому, что модель
+# обучалась на YouTube-субтитрах, где такие концовки частотны. Если
+# транскрипция после нормализации совпадает ровно с одной из этих фраз —
+# считаем это «неречью» и возвращаем пустую строку.
+_HALLUCINATION_PHRASES: frozenset[str] = frozenset(
+    _p.strip() for _p in [
+        "продолжение следует",
+        "спасибо за просмотр",
+        "субтитры делал dimatorzok",
+        "субтитры подготовил dimatorzok",
+        "субтитры сделал dimatorzok",
+        "субтитры подготовил",
+        "субтитры сделал",
+        "субтитры делал",
+        "редактор субтитров",
+        "корректор",
+        "игорь дмитриев",
+        "субтитры создавал dimatorzok",
+        "подписывайтесь на канал",
+        "ставьте лайки",
+        "спасибо за внимание",
+    ]
+)
+
+_NORMALIZE_RE = re.compile(r"[^\w\s]+", flags=re.UNICODE)
+
+
+def _is_hallucination(text: str) -> bool:
+    """True iff ``text`` после нормализации совпадает с известной фразой-галлюцинацией."""
+    if not text:
+        return False
+    normalized = _NORMALIZE_RE.sub(" ", text.lower()).strip()
+    normalized = " ".join(normalized.split())
+    return normalized in _HALLUCINATION_PHRASES
 
 
 def _vram_snapshot() -> str:
@@ -124,10 +161,19 @@ class WhisperSTT(STTProvider):
             # don't require). Our pipeline already writes 16 kHz mono PCM16,
             # so we just read it into float32 [-1, 1] and hand whisper the array.
             audio = _load_audio_float32(p)
+            # initial_prompt даёт Whisper контекст: на одиночных словах
+            # (например wake-word «Шурочка») без подсказки модель склонна
+            # подменять ввод частотными фразами из тренировочного корпуса
+            # («Спасибо», «Продолжение следует»). Подсказка с нужными
+            # именами резко уменьшает такие подмены.
+            # condition_on_previous_text=False — каждый вызов независим,
+            # без переноса «воображаемого контекста» между утеrances.
             result = self._model.transcribe(
                 audio,
                 language=self._language,
                 fp16=(self._device == "cuda"),
+                initial_prompt="Шурочка, Шура, Пайтон, Линукс.",
+                condition_on_previous_text=False,
             )
         except Exception as exc:
             raise STTError(f"Whisper transcription failed for {p}: {exc}") from exc
@@ -137,6 +183,9 @@ class WhisperSTT(STTProvider):
         logger.info(
             "Transcription done in %.2fs: %r", elapsed, text[:120] + ("…" if len(text) > 120 else "")
         )
+        if _is_hallucination(text):
+            logger.info("Filtered Whisper hallucination phrase: %r → ''", text)
+            return ""
         return text
 
     def unload_model(self) -> None:
