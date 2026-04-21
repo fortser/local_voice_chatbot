@@ -29,7 +29,7 @@ from config import (
 )
 from core.base import LLMProvider
 from core.ollama_client import OllamaClient
-from core.prompt_manager import clean_llm_response
+from core.prompt_manager import clean_llm_response, detect_thinking_markers
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,17 @@ class OllamaLLM(LLMProvider):
         self._base_max_tokens = int(base_max_tokens)
         self._thinking_multiplier = int(thinking_multiplier)
         self._system_prompt = (system_prompt or "").strip() or None
+        self._last_metrics: dict | None = None
+        # Models we auto-classified as thinking from their own output markers
+        # (harmony channels, "Thinking Process:" headers, etc.). Populated by
+        # warmup and by every ``generate`` — once a model outs itself as
+        # thinking we permanently grant it the larger token/timeout budget.
+        self._runtime_thinking: set[str] = set()
 
     # ---- LLMProvider ----
 
     def generate(self, prompt: str) -> str:
-        thinking = is_thinking_model(self._model)
+        thinking = self._is_thinking_now(self._model)
         if thinking:
             max_tokens = self._base_max_tokens * self._thinking_multiplier
             timeout = self._base_timeout * self._thinking_multiplier
@@ -86,6 +92,12 @@ class OllamaLLM(LLMProvider):
             timeout=timeout,
             system_prompt=self._system_prompt,
         )
+        self._last_metrics = {
+            "elapsed_s": result.elapsed_s,
+            "completion_tokens": result.eval_count,
+            "prompt_tokens": result.prompt_eval_count,
+        }
+        self._maybe_mark_thinking(self._model, result.text)
         cleaned = clean_llm_response(result.text)
         if not cleaned:
             logger.warning(
@@ -107,3 +119,41 @@ class OllamaLLM(LLMProvider):
     @property
     def client(self) -> OllamaClient:
         return self._client
+
+    @property
+    def last_metrics(self) -> dict | None:
+        """Timing + token counts from the most recent ``generate`` call."""
+        return self._last_metrics
+
+    def list_models(self) -> list[str]:
+        """All models installed locally in Ollama (from ``/api/tags``)."""
+        return self._client.list_models()
+
+    def set_model(self, name: str) -> None:
+        if not name:
+            raise ValueError("Model name must not be empty")
+        logger.info("OllamaLLM: switching model %r → %r", self._model, name)
+        self._model = name
+
+    def mark_thinking(self, name: str) -> None:
+        """Flag ``name`` as a thinking model (autodetected or external)."""
+        if name and name not in self._runtime_thinking:
+            self._runtime_thinking.add(name)
+            logger.info(
+                "OllamaLLM: model %r marked as thinking — using ×%d token budget",
+                name,
+                self._thinking_multiplier,
+            )
+
+    # ---- internals ----
+
+    def _is_thinking_now(self, name: str | None) -> bool:
+        return is_thinking_model(name) or (name is not None and name in self._runtime_thinking)
+
+    def _maybe_mark_thinking(self, name: str | None, raw_text: str) -> None:
+        if not name or name in self._runtime_thinking:
+            return
+        if is_thinking_model(name):
+            return
+        if detect_thinking_markers(raw_text):
+            self.mark_thinking(name)

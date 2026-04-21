@@ -60,6 +60,35 @@ _ALLOWED_SR = (8000, 24000, 48000)
 _SILERO_ALLOWED_RE = re.compile(r"[^а-яА-ЯёЁ0-9\s.,!?;:—–\-()\"'+]")
 _WHITESPACE_RUN_RE = re.compile(r"\s+")
 
+# Silero's FastPitch positional-encoding buffer is 5 000 positions; one
+# position ≈ 1 phoneme, and Russian averages ~5 phonemes/char. At ~900 chars
+# we hit roughly 4 500 positions — a 10 % safety margin. Beyond that the
+# TorchScript forward pass raises "tensor a (N) must match tensor b (5000)".
+# We truncate *before* sanitization so the boundary calculation is on the
+# same character set the caller supplied (i.e. raw Unicode, including Cyrillic
+# multi-byte), not on the scrubbed version.
+_SILERO_MAX_CHARS = 900
+
+
+def _truncate_at_sentence(text: str, limit: int = _SILERO_MAX_CHARS) -> str:
+    """Trim ``text`` to ``limit`` chars, snapping back to a sentence boundary.
+
+    Prefers cutting after ". "/". " → "! " → "? " (in that priority order)
+    so we don't clip mid-word. If no clean break is found in the second half
+    of the window we fall back to the last space, then hard-cut.
+    """
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for sep in (". ", "! ", "? ", "…", ".\n", "!\n", "?\n"):
+        idx = cut.rfind(sep)
+        if idx >= limit // 2:
+            return text[: idx + len(sep)].rstrip()
+    space = cut.rfind(" ")
+    if space >= limit // 2:
+        return text[:space].rstrip()
+    return cut
+
 
 def _sanitize_for_silero(text: str) -> str:
     """Scrub chars the Russian tacotron doesn't know.
@@ -238,6 +267,18 @@ class SileroTTS(TTSProvider):
         raw = (text or "").strip()
         if not raw:
             raise TTSError("Cannot synthesize empty text")
+        # Guard against the FastPitch positional-encoding limit (5 000 slots).
+        # Truncation is applied *before* transliteration so the boundary aligns
+        # with human-readable characters — much easier to reason about than
+        # scrubbed bytes.
+        truncated = _truncate_at_sentence(raw)
+        if len(truncated) < len(raw):
+            logger.warning(
+                "Silero: input truncated %d → %d chars (limit=%d) to avoid "
+                "positional-encoding overflow",
+                len(raw), len(truncated), _SILERO_MAX_CHARS,
+            )
+        raw = truncated
         translit = _transliterate_latin(raw)
         clean = _sanitize_for_silero(translit)
         if not clean:

@@ -39,6 +39,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 from bootstrap import bootstrap
 from config import (
@@ -52,6 +53,7 @@ from config import (
 from core import create_llm_provider, create_stt_provider, create_tts_provider
 from core.audio_output import AudioPlayer
 from core.audio_stream import AudioStream
+from core.prompt_manager import detect_thinking_markers
 from core.vad import VoiceActivityDetector
 from utils.errors import (
     AudioError,
@@ -86,6 +88,17 @@ class TurnResult:
     wav_out: str | None
     total_s: float
     error: str | None = None
+    # Per-stage wall-clock timings in milliseconds. ``None`` when the stage
+    # was skipped (e.g. empty STT short-circuits LLM, empty LLM short-circuits
+    # the primary TTS — though the fallback phrase still gets synthesised).
+    stt_ms: float | None = None
+    llm_ms: float | None = None
+    tts_ms: float | None = None
+    # Token accounting straight from the LLM backend (``eval_count`` /
+    # ``completion_tokens`` for output, ``prompt_eval_count`` /
+    # ``prompt_tokens`` for input). ``None`` if the backend didn't report.
+    llm_prompt_tokens: int | None = None
+    llm_completion_tokens: int | None = None
 
 
 class VoicePipeline:
@@ -107,9 +120,33 @@ class VoicePipeline:
     def lock(self) -> threading.Lock:
         return self._lock
 
+    @property
+    def stream(self) -> AudioStream:
+        return self._stream
+
+    @property
+    def vad(self) -> VoiceActivityDetector | None:
+        return self._vad
+
     # ---- lifecycle ----
 
-    def start(self) -> None:
+    def start(self, on_stage: Callable[[str, object], None] | None = None) -> None:
+        """Initialise and warm up all subsystems.
+
+        ``on_stage(name, payload)`` is called at the start of each slow step
+        so callers (UI) can show progress without polling:
+
+        * ``("calibrating", duration_s)`` — VAD calibration starting
+        * ``("loading_stt", None)``         — Whisper model loading
+        * ``("loading_tts", None)``         — TTS model loading
+        """
+        def _stage(name: str, payload: object = None) -> None:
+            if on_stage is not None:
+                try:
+                    on_stage(name, payload)
+                except Exception:
+                    logger.debug("on_stage callback raised", exc_info=True)
+
         logger.info(
             "Pipeline start: stt=%s llm=%s tts=%s gpu_swap=%s",
             type(self._stt).__name__,
@@ -123,6 +160,7 @@ class VoicePipeline:
 
             print("Калибровка шума (молчите ~2 сек)…")
             t0 = time.monotonic()
+            _stage("calibrating", CALIBRATION_DURATION)
             noise, threshold = self._vad.calibrate()
             print(
                 f"  шум={noise:.0f} RMS, порог={threshold:.0f} "
@@ -131,6 +169,7 @@ class VoicePipeline:
 
             print("Загружаю Whisper…")
             t0 = time.monotonic()
+            _stage("loading_stt")
             self._stt.load_model()
             print(f"  готов за {time.monotonic() - t0:.1f}с")
 
@@ -145,6 +184,7 @@ class VoicePipeline:
             if not self._gpu_swap:
                 print("Загружаю TTS…")
                 t0 = time.monotonic()
+                _stage("loading_tts")
                 self._tts.load_model()
                 print(f"  готов за {time.monotonic() - t0:.1f}с")
             else:
@@ -172,19 +212,32 @@ class VoicePipeline:
 
     # ---- one turn ----
 
-    def process_voice_input(self) -> TurnResult:
+    def process_voice_input(
+        self,
+        on_stage: Callable[[str], None] | None = None,
+    ) -> TurnResult:
         assert self._vad is not None, "start() must be called first"
         # Acquire the shared lock for the whole turn — blocks IPC handlers
         # from touching the mic/models until we're done. Console callers
         # accept this blocking; they're interactive anyway.
         with self._lock:
-            return self._process_voice_input_locked()
+            return self._process_voice_input_locked(on_stage)
 
-    def _process_voice_input_locked(self) -> TurnResult:
+    def _process_voice_input_locked(
+        self, on_stage: Callable[[str], None] | None = None,
+    ) -> TurnResult:
         assert self._vad is not None
         t_total = time.monotonic()
 
+        def _emit(stage: str) -> None:
+            if on_stage is not None:
+                try:
+                    on_stage(stage)
+                except Exception:
+                    logger.exception("on_stage callback raised")
+
         # 1. Record
+        _emit("listening")
         print("🎤 Слушаю… (автостоп через ~1 сек тишины)")
         try:
             wav_in = self._vad.record_until_silence()
@@ -197,7 +250,9 @@ class VoicePipeline:
             )
 
         # 2. STT
+        _emit("processing")
         print("📝 Распознаю…")
+        t_stt = time.monotonic()
         try:
             user_text = self._stt.transcribe(wav_in).strip()
         except STTError as exc:
@@ -206,52 +261,77 @@ class VoicePipeline:
                 "", "", wav_in, None,
                 time.monotonic() - t_total,
                 f"stt: {exc}",
+                stt_ms=(time.monotonic() - t_stt) * 1000,
             )
+        stt_ms = (time.monotonic() - t_stt) * 1000
 
         if not user_text:
-            wav_out = self._speak_safely(FALLBACK_NO_SPEECH)
+            wav_out, tts_ms = self._speak_safely(FALLBACK_NO_SPEECH)
             return TurnResult(
                 "", FALLBACK_NO_SPEECH, wav_in, wav_out,
                 time.monotonic() - t_total,
+                stt_ms=stt_ms, tts_ms=tts_ms,
             )
 
         print(f"   «{user_text}»")
 
         # 3. LLM
         print("🧠 Думаю…")
+        t_llm = time.monotonic()
         try:
             llm_text = self._llm.generate(user_text).strip()
         except LLMError as exc:
             logger.exception("LLM failed")
-            wav_out = self._speak_safely(FALLBACK_LLM_ERROR)
+            wav_out, tts_ms = self._speak_safely(FALLBACK_LLM_ERROR)
             return TurnResult(
                 user_text, FALLBACK_LLM_ERROR, wav_in, wav_out,
                 time.monotonic() - t_total,
                 f"llm: {exc}",
+                stt_ms=stt_ms,
+                llm_ms=(time.monotonic() - t_llm) * 1000,
+                tts_ms=tts_ms,
             )
         except VoiceAIError as exc:  # e.g. ConfigError from LM Studio auto-resolve
             logger.exception("LLM failed (config)")
-            wav_out = self._speak_safely(FALLBACK_LLM_ERROR)
+            wav_out, tts_ms = self._speak_safely(FALLBACK_LLM_ERROR)
             return TurnResult(
                 user_text, FALLBACK_LLM_ERROR, wav_in, wav_out,
                 time.monotonic() - t_total,
                 f"llm-config: {exc}",
+                stt_ms=stt_ms,
+                llm_ms=(time.monotonic() - t_llm) * 1000,
+                tts_ms=tts_ms,
             )
+        llm_ms = (time.monotonic() - t_llm) * 1000
+        # Prefer the client's own elapsed_s (excludes network/parse fluff
+        # around httpx) when it's reported, else fall back to wall-clock.
+        llm_metrics = getattr(self._llm, "last_metrics", None) or {}
+        if llm_metrics.get("elapsed_s") is not None:
+            llm_ms = float(llm_metrics["elapsed_s"]) * 1000
+        prompt_tokens = llm_metrics.get("prompt_tokens")
+        completion_tokens = llm_metrics.get("completion_tokens")
 
         if not llm_text:
-            wav_out = self._speak_safely(FALLBACK_EMPTY_LLM)
+            wav_out, tts_ms = self._speak_safely(FALLBACK_EMPTY_LLM)
             return TurnResult(
                 user_text, FALLBACK_EMPTY_LLM, wav_in, wav_out,
                 time.monotonic() - t_total,
+                stt_ms=stt_ms, llm_ms=llm_ms, tts_ms=tts_ms,
+                llm_prompt_tokens=prompt_tokens,
+                llm_completion_tokens=completion_tokens,
             )
 
         print(f"   «{llm_text}»")
 
         # 4+5. TTS + playback
-        wav_out = self._speak_safely(llm_text)
+        _emit("speaking")
+        wav_out, tts_ms = self._speak_safely(llm_text)
         return TurnResult(
             user_text, llm_text, wav_in, wav_out,
             time.monotonic() - t_total,
+            stt_ms=stt_ms, llm_ms=llm_ms, tts_ms=tts_ms,
+            llm_prompt_tokens=prompt_tokens,
+            llm_completion_tokens=completion_tokens,
         )
 
     # ---- IPC-oriented operations ----
@@ -279,7 +359,7 @@ class VoicePipeline:
             if user_text:
                 llm_text = self._llm.generate(user_text).strip()
                 if llm_text and speak:
-                    wav_out = self._speak(llm_text, play=False)
+                    wav_out, _synth_ms = self._speak(llm_text, play=False)
             return {
                 "input_text": user_text,
                 "output_text": llm_text,
@@ -296,7 +376,7 @@ class VoicePipeline:
             llm_text = self._llm.generate(text).strip()
             wav_out: str | None = None
             if llm_text and speak:
-                wav_out = self._speak(llm_text, play=False)
+                wav_out, _synth_ms = self._speak(llm_text, play=False)
             return {
                 "input_text": text,
                 "output_text": llm_text,
@@ -314,6 +394,76 @@ class VoicePipeline:
                 "noise_rms": float(noise),
                 "threshold": float(threshold),
                 "duration": dur,
+            }
+
+    def list_llm_models(self) -> list[str]:
+        """Ask the LLM backend for its available models. Empty list on failure.
+
+        Held outside the pipeline lock — this is a quick HTTP query against
+        the backend and we don't want it to queue behind an in-flight turn.
+        """
+        lister = getattr(self._llm, "list_models", None)
+        if lister is None:
+            return []
+        try:
+            return list(lister())
+        except Exception:
+            logger.exception("list_llm_models failed")
+            return []
+
+    def set_llm_model(self, name: str) -> None:
+        """Swap the active LLM model. Takes the lock so a turn can't race."""
+        setter = getattr(self._llm, "set_model", None)
+        if setter is None:
+            raise RuntimeError(
+                f"{type(self._llm).__name__} does not support runtime model switching"
+            )
+        with self._lock:
+            setter(name)
+
+    def warmup_llm(self, *, timeout: float = 600.0) -> dict[str, object]:
+        """Fire a real generate so the backend loads the model and we can
+        sniff its output format.
+
+        LM Studio and Ollama both do just-in-time model loading: the model
+        hits VRAM/RAM only when a request targets it. Calling this after
+        ``set_llm_model`` moves the (sometimes multi-minute) load time into
+        an explicit moment the user is waiting on.
+
+        We also reuse the warmup to **autodetect thinking models** — we send
+        a concrete question with ``max_tokens=64``, enough to see the
+        reasoning preamble (``<|channel|>analysis``, ``Thinking Process:``,
+        ``<think>``…). If any appears, the provider gets the model flagged
+        so subsequent voice turns run with the ×N token/timeout budget
+        instead of getting cut off mid-thought.
+
+        Returns ``{"elapsed_s", "thinking_detected"}``. Raises the usual LLM
+        errors on network/config failure.
+        """
+        with self._lock:
+            client = getattr(self._llm, "client", None)
+            model = getattr(self._llm, "model", None)
+            if client is None or not model or model == "(auto)":
+                return {"elapsed_s": 0.0, "thinking_detected": False}
+            # Question that reliably elicits reasoning in thinking models
+            # (the user's own test case); for non-thinking models it's a
+            # cheap one-sentence answer.
+            result = client.generate(
+                "Когда родился Пушкин?",
+                model=model,
+                max_tokens=64,
+                timeout=float(timeout),
+                system_prompt=getattr(self._llm, "_system_prompt", None),
+            )
+            raw_text = getattr(result, "text", "") or ""
+            thinking = detect_thinking_markers(raw_text)
+            if thinking:
+                marker = getattr(self._llm, "mark_thinking", None)
+                if callable(marker):
+                    marker(model)
+            return {
+                "elapsed_s": float(getattr(result, "elapsed_s", 0.0) or 0.0),
+                "thinking_detected": bool(thinking),
             }
 
     def health_check(self) -> dict[str, object]:
@@ -357,12 +507,18 @@ class VoicePipeline:
 
     # ---- TTS helpers ----
 
-    def _speak(self, text: str, *, play: bool = True) -> str:
+    def _speak(self, text: str, *, play: bool = True) -> tuple[str, float]:
         """Synthesize. Optionally play. GPU-swap when required. Raises on failure.
+
+        Returns ``(wav_path, synth_ms)`` — ``synth_ms`` covers model I/O
+        (including the GPU-swap shuffle when it kicks in) but **not** playback,
+        since playback time is a property of the clip's duration, not of TTS
+        performance.
 
         ``play=False`` is the IPC path: the caller just wants a WAV on disk
         to fetch or serve; playing it locally would be surprising.
         """
+        t_synth = time.monotonic()
         if self._gpu_swap:
             logger.info("GPU swap: unload STT → load TTS → synth → unload TTS → reload STT")
             self._stt.unload_model()
@@ -377,14 +533,20 @@ class VoicePipeline:
                     self._stt.load_model()
         else:
             wav = self._tts.synthesize(text)
+        synth_ms = (time.monotonic() - t_synth) * 1000
 
         if play:
             print("🔊 Воспроизвожу…")
             self._player.play_file(wav)
-        return wav
+        return wav, synth_ms
 
-    def _speak_safely(self, text: str) -> str | None:
-        """Like :meth:`_speak` but swallows TTS/playback errors into a warning."""
+    def _speak_safely(self, text: str) -> tuple[str | None, float | None]:
+        """Like :meth:`_speak` but swallows TTS/playback errors into a warning.
+
+        Returns ``(wav_path | None, synth_ms | None)``. ``None, None`` means
+        synthesis itself failed; ``wav, synth_ms`` means the WAV exists even
+        if playback later blew up (we still measured the synth correctly).
+        """
         try:
             return self._speak(text)
         except TTSError as exc:
@@ -393,7 +555,7 @@ class VoicePipeline:
         except AudioError as exc:
             logger.exception("Playback failed")
             print(f"⚠ воспроизведение не удалось: {exc}")
-        return None
+        return None, None
 
 
 def _start_ipc_server(pipeline: VoicePipeline, host: str, port: int):
@@ -496,9 +658,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["console", "ipc"],
-        default="console",
+        choices=["ui", "console", "ipc"],
+        default="ui",
         help=(
+            "ui = Tkinter GUI with diagnostics (default); "
             "console = interactive REPL + IPC server on background thread; "
             "ipc = headless, IPC server only."
         ),
@@ -512,6 +675,12 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=IPC_PORT, help="IPC bind port.")
     args = parser.parse_args()
 
+    if args.mode == "ui":
+        # Lazy import so console/IPC modes don't drag in Tkinter dependencies.
+        from ui.tkinter_ui import run_ui
+        return run_ui(
+            with_ipc=not args.no_ipc, ipc_host=args.host, ipc_port=args.port
+        )
     if args.mode == "console":
         return run_console_mode(
             with_ipc=not args.no_ipc, ipc_host=args.host, ipc_port=args.port

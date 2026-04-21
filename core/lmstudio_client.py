@@ -52,7 +52,7 @@ from core.llm_errors import (
     classify_http_error,
     format_llm_error_message,
 )
-from core.prompt_manager import clean_llm_response
+from core.prompt_manager import clean_llm_response, detect_thinking_markers
 from utils.errors import ConfigError, OllamaError
 
 logger = logging.getLogger(__name__)
@@ -232,13 +232,18 @@ class LMStudioLLM(LLMProvider):
         self._base_max_tokens = int(base_max_tokens)
         self._thinking_multiplier = int(thinking_multiplier)
         self._system_prompt = (system_prompt or "").strip() or None
+        self._last_metrics: dict | None = None
+        # Models auto-classified as thinking from their own output markers.
+        # Populated by warmup and by every ``generate``; once flagged the
+        # model permanently gets the ×N max_tokens/timeout budget.
+        self._runtime_thinking: set[str] = set()
 
     # ---- LLMProvider ----
 
     def generate(self, prompt: str) -> str:
         model = self._ensure_model()
 
-        thinking = _is_thinking_model(model)
+        thinking = self._is_thinking_now(model)
         if thinking:
             max_tokens = self._base_max_tokens * self._thinking_multiplier
             timeout = self._base_timeout * self._thinking_multiplier
@@ -259,6 +264,12 @@ class LMStudioLLM(LLMProvider):
             timeout=timeout,
             system_prompt=self._system_prompt,
         )
+        self._last_metrics = {
+            "elapsed_s": result.elapsed_s,
+            "completion_tokens": result.eval_count,
+            "prompt_tokens": result.prompt_eval_count,
+        }
+        self._maybe_mark_thinking(model, result.text)
         cleaned = clean_llm_response(result.text)
         if not cleaned:
             logger.warning(
@@ -283,7 +294,50 @@ class LMStudioLLM(LLMProvider):
     def client(self) -> LMStudioClient:
         return self._client
 
+    @property
+    def last_metrics(self) -> dict | None:
+        """Timing + token counts from the most recent ``generate`` call."""
+        return self._last_metrics
+
+    def list_models(self) -> list[str]:
+        """Models currently loaded in LM Studio (from ``/v1/models``)."""
+        return self._client.list_models()
+
+    def set_model(self, name: str) -> None:
+        if not name:
+            raise ValueError("Model name must not be empty")
+        logger.info(
+            "LMStudioLLM: switching model %r → %r",
+            self._resolved_model or self._configured_model,
+            name,
+        )
+        self._configured_model = name
+        self._resolved_model = name
+
+    def mark_thinking(self, name: str) -> None:
+        """Flag ``name`` as a thinking model (autodetected or external)."""
+        if name and name not in self._runtime_thinking:
+            self._runtime_thinking.add(name)
+            logger.info(
+                "LMStudioLLM: model %r marked as thinking — using ×%d token budget",
+                name,
+                self._thinking_multiplier,
+            )
+
     # ---- internals ----
+
+    def _is_thinking_now(self, name: str | None) -> bool:
+        return _is_thinking_model(name) or (
+            name is not None and name in self._runtime_thinking
+        )
+
+    def _maybe_mark_thinking(self, name: str | None, raw_text: str) -> None:
+        if not name or name in self._runtime_thinking:
+            return
+        if _is_thinking_model(name):
+            return
+        if detect_thinking_markers(raw_text):
+            self.mark_thinking(name)
 
     def _ensure_model(self) -> str:
         if self._resolved_model:
