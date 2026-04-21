@@ -128,6 +128,14 @@ class VoicePipeline:
     def vad(self) -> VoiceActivityDetector | None:
         return self._vad
 
+    @property
+    def stt(self):
+        return self._stt
+
+    @property
+    def player(self) -> AudioPlayer:
+        return self._player
+
     # ---- lifecycle ----
 
     def start(self, on_stage: Callable[[str, object], None] | None = None) -> None:
@@ -223,8 +231,24 @@ class VoicePipeline:
         with self._lock:
             return self._process_voice_input_locked(on_stage)
 
+    def process_voice_input_from_wav(
+        self,
+        wav_in: str,
+        on_stage: Callable[[str], None] | None = None,
+    ) -> TurnResult:
+        """Run STT→LLM→TTS+playback on a pre-recorded WAV.
+
+        Used by the wake-word listener: it records the user's question
+        itself (directly via VAD, so it can apply its own timeout) and then
+        hands the WAV to the pipeline to finish the turn.
+        """
+        with self._lock:
+            return self._process_voice_input_locked(on_stage, wav_in=wav_in)
+
     def _process_voice_input_locked(
-        self, on_stage: Callable[[str], None] | None = None,
+        self,
+        on_stage: Callable[[str], None] | None = None,
+        wav_in: str | None = None,
     ) -> TurnResult:
         assert self._vad is not None
         t_total = time.monotonic()
@@ -236,18 +260,19 @@ class VoicePipeline:
                 except Exception:
                     logger.exception("on_stage callback raised")
 
-        # 1. Record
-        _emit("listening")
-        print("🎤 Слушаю… (автостоп через ~1 сек тишины)")
-        try:
-            wav_in = self._vad.record_until_silence()
-        except AudioError as exc:
-            logger.warning("Recording failed: %s", exc)
-            return TurnResult(
-                "", "", None, None,
-                time.monotonic() - t_total,
-                f"recording: {exc}",
-            )
+        # 1. Record (skipped if caller supplied a WAV already)
+        if wav_in is None:
+            _emit("listening")
+            print("🎤 Слушаю… (автостоп через ~1 сек тишины)")
+            try:
+                wav_in = self._vad.record_until_silence()
+            except AudioError as exc:
+                logger.warning("Recording failed: %s", exc)
+                return TurnResult(
+                    "", "", None, None,
+                    time.monotonic() - t_total,
+                    f"recording: {exc}",
+                )
 
         # 2. STT
         _emit("processing")

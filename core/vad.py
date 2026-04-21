@@ -140,12 +140,18 @@ class VoiceActivityDetector:
         pause_threshold: float | None = None,
         max_duration: float = 30.0,
         output_path: str | Path | None = None,
+        initial_silence_timeout: float | None = None,
     ) -> str:
         """Block until a full utterance is captured; write WAV; return path.
 
         FSM:
             idle → (rms > threshold) → recording
             recording → (silence ≥ pause_threshold) → stop → save
+
+        ``initial_silence_timeout`` — if set and no speech onset within that
+        many seconds, abort with :class:`AudioError` instead of waiting the
+        full ``max_duration``. Used by the wake-word listener to poll
+        short windows and by the "active" phase to give up on silent users.
         """
         self._require_running()
         pause = pause_threshold if pause_threshold is not None else self._pause_threshold
@@ -161,11 +167,22 @@ class VoiceActivityDetector:
 
         try:
             while True:
-                if time.monotonic() - t_start > max_duration:
+                elapsed = time.monotonic() - t_start
+                if elapsed > max_duration:
                     logger.warning(
                         "record_until_silence: max_duration %.1fs reached", max_duration
                     )
                     break
+                if (
+                    not speech_started
+                    and initial_silence_timeout is not None
+                    and elapsed > initial_silence_timeout
+                ):
+                    # No onset within the grace period — bail without writing
+                    # a WAV so the caller can treat this as "silence".
+                    raise AudioError(
+                        f"No speech onset within {initial_silence_timeout:.1f}s"
+                    )
 
                 try:
                     samples, rms = self._stream.chunk_queue.get(

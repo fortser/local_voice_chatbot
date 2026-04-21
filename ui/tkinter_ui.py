@@ -39,7 +39,7 @@ from tkinter import scrolledtext, ttk
 from typing import Any
 
 from bootstrap import bootstrap
-from config import IPC_HOST, IPC_PORT
+from config import IPC_HOST, IPC_PORT, WAKE_WORD, WAKE_WORD_ENABLED_AT_STARTUP
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +49,21 @@ logger = logging.getLogger(__name__)
 # Single source of truth for the status bar. Keep the icon column one code
 # point wide so the layout doesn't jitter when the status changes.
 STATE_LABELS: dict[str, tuple[str, str]] = {
-    "starting":    ("⚙", "Инициализация…"),
-    "idle":        ("🟢", "Готов"),
-    "calibrating": ("🔵", "Калибровка"),
-    "listening":   ("🔴", "Запись"),
-    "processing":  ("🧠", "Обработка"),
-    "speaking":    ("🔊", "Воспроизведение"),
-    "warming":     ("⏳", "Прогрев LLM"),
-    "error":       ("❌", "Ошибка"),
-    "stopping":    ("⚫", "Завершение…"),
-    "stopped":     ("⚫", "Остановлен"),
+    "starting":         ("⚙", "Инициализация…"),
+    "idle":             ("🟢", "Готов"),
+    "calibrating":      ("🔵", "Калибровка"),
+    "listening":        ("🔴", "Запись"),
+    "processing":       ("🧠", "Обработка"),
+    "speaking":         ("🔊", "Воспроизведение"),
+    "warming":          ("⏳", "Прогрев LLM"),
+    "error":            ("❌", "Ошибка"),
+    "stopping":         ("⚫", "Завершение…"),
+    "stopped":          ("⚫", "Остановлен"),
+    # Дежурный режим (wake-word).
+    "standby_idle":     ("🛌", "Дежурный: жду «{wake}»"),
+    "wake_heard":       ("👂", "Услышал — подождите"),
+    "wake_active":      ("🎙", "Слушаю вопрос"),
+    "wake_processing":  ("🧠", "Обработка (дежурный)"),
 }
 
 _INT16_PER_PERCENT = 327.67  # mirrors AudioStream._INT16_PER_PERCENT
@@ -126,6 +131,8 @@ class VoiceAIApp:
         # UI code only reads them through the accessors once ready.
         self._pipeline: Any = None
         self._ipc_server: Any = None
+        # Wake-word listener (Stage 8). Created after pipeline.start().
+        self._wake_listener: Any = None
         self._ready = False
         self._stopped = False
         self._shutdown_started = False
@@ -204,6 +211,13 @@ class VoiceAIApp:
             btns, text="🎤 Слушай", command=self._on_listen, width=14
         )
         self._listen_btn.pack(side="left", padx=4)
+        self._standby_btn = ttk.Button(
+            btns,
+            text="🛌 Дежурный: выкл",
+            command=self._on_toggle_standby,
+            width=20,
+        )
+        self._standby_btn.pack(side="left", padx=4)
         self._recal_btn = ttk.Button(
             btns, text="🔄 Перекалибровать", command=self._on_recalibrate, width=20
         )
@@ -339,17 +353,31 @@ class VoiceAIApp:
             return
         # Drop the click if we're already mid-cycle; worker queue would
         # serialize anyway but an accidental double-click would queue a second
-        # turn the user didn't ask for.
-        if self._current_state() not in ("idle",):
+        # turn the user didn't ask for. "standby_idle" is allowed — manual
+        # button is the documented fallback even while the listener runs.
+        if self._current_state() not in ("idle", "standby_idle"):
             return
         self._job_queue.put(("turn", None))
 
     def _on_recalibrate(self) -> None:
         if not self._ready:
             return
-        if self._current_state() not in ("idle",):
+        if self._current_state() not in ("idle", "standby_idle"):
             return
         self._job_queue.put(("recalibrate", None))
+
+    def _on_toggle_standby(self) -> None:
+        if not self._ready or self._wake_listener is None:
+            return
+        # Flip directly on the UI thread — enable()/disable() just flip a
+        # threading.Event, no heavy work. The listener thread picks it up
+        # on its next loop iteration.
+        if self._wake_listener.is_enabled:
+            self._wake_listener.disable()
+            self._standby_btn.configure(text="🛌 Дежурный: выкл")
+        else:
+            self._wake_listener.enable()
+            self._standby_btn.configure(text="🛌 Дежурный: вкл")
 
     def _on_refresh_models(self) -> None:
         if not self._ready:
@@ -479,8 +507,36 @@ class VoiceAIApp:
         except Exception:
             current = None
         self._post("models_list", (self._pipeline.list_llm_models(), current))
+
+        # Wake-word listener — always spun up, toggled on by user (or by
+        # WAKE_WORD_ENABLED_AT_STARTUP for power users).
+        try:
+            from core.wake_word import WakeWordListener
+            listener = WakeWordListener(
+                self._pipeline, on_state=self._on_wake_event
+            )
+            listener.start()
+            if WAKE_WORD_ENABLED_AT_STARTUP:
+                listener.enable()
+            self._wake_listener = listener
+        except Exception as exc:
+            logger.exception("WakeWordListener init failed")
+            self._post("error", f"wake-word: {exc}")
+
         self._post("state", ("idle", None))
         self._post("ready", None)
+
+    def _on_wake_event(self, state: str, payload: object) -> None:
+        """Callback from WakeWordListener thread. Posts to the UI queue."""
+        if state == "turn_result":
+            self._post("turn_result", payload)
+            self._post("vad_refresh", None)
+        else:
+            # state ∈ {standby_idle, wake_heard, wake_active, wake_processing, idle}
+            detail = None
+            if isinstance(payload, str) and payload:
+                detail = payload[:60]
+            self._post("state", (state, detail))
 
     def _do_turn(self) -> None:
         assert self._pipeline is not None
@@ -553,6 +609,11 @@ class VoiceAIApp:
         # worker owns so the UI thread never blocks on GPU cleanup or
         # socket joins. The UI polls for the "stopped" event with a
         # deadline so a hung backend can't keep the window open forever.
+        try:
+            if self._wake_listener is not None:
+                self._wake_listener.stop()
+        except Exception:
+            logger.exception("wake listener stop failed")
         try:
             if self._ipc_server is not None:
                 self._ipc_server.stop()
@@ -650,6 +711,10 @@ class VoiceAIApp:
         elif kind == "ready":
             self._ready = True
             self._set_controls_enabled(True)
+            # Sync the standby-toggle button text with the listener's actual
+            # state (mostly relevant when WAKE_WORD_ENABLED_AT_STARTUP=True).
+            if self._wake_listener is not None and self._wake_listener.is_enabled:
+                self._standby_btn.configure(text="🛌 Дежурный: вкл")
         elif kind == "fatal":
             self._ready = False
             self._set_controls_enabled(False)
@@ -910,12 +975,17 @@ class VoiceAIApp:
     def _set_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         self._listen_btn.configure(state=state)
+        self._standby_btn.configure(state=state)
         self._recal_btn.configure(state=state)
         self._refresh_models_btn.configure(state=state)
         self._apply_model_btn.configure(state=state)
 
     def _set_state(self, name: str, detail: str | None = None) -> None:
         icon, label = STATE_LABELS.get(name, ("?", name))
+        # ``standby_idle`` label uses {wake} placeholder so the configured
+        # wake-word shows up in the status bar without hard-coding it here.
+        if "{wake}" in label:
+            label = label.replace("{wake}", WAKE_WORD)
         self._status_icon.configure(text=icon)
         text = label if not detail else f"{label}: {detail}"
         self._status_text.configure(text=text)
