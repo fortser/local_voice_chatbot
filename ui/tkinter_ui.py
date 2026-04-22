@@ -394,7 +394,10 @@ class VoiceAIApp:
             return
         # Applying while a turn is running would wait on the lock anyway, but
         # the UX is clearer if we gate it the same way as the Listen button.
-        if self._current_state() not in ("idle",):
+        # standby_idle допускаем — пользователь может поменять модель
+        # с включённым дежурным режимом; pipeline.lock сериализует это
+        # с циклом wake-word, так что подождём один scan window максимум.
+        if self._current_state() not in ("idle", "standby_idle"):
             return
         self._model_status.configure(text=f"применяю «{name}»…", foreground="#777")
         self._job_queue.put(("set_model", name))

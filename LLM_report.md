@@ -119,30 +119,33 @@
 # PROJECT REPORTS
 
 # Project: .
-Source: Python: 28 py | 3,198 lines | 109 KB
+Source: Python: 39 py | 6,710 lines | 251 KB
 Language: PYTHON
 
 ## Packages
-core/ — 14 modules, 0 subpackages
-ipc/ — 0 modules, 0 subpackages
-tests/ — 0 modules, 0 subpackages
-ui/ — 0 modules, 0 subpackages
+core/ — 16 modules, 0 subpackages
+ipc/ — 4 modules, 0 subpackages
+tests/ — 1 modules, 0 subpackages
+ui/ — 1 modules, 0 subpackages
 utils/ — 4 modules, 0 subpackages
 
 ## Key Classes
-AudioStream (core/audio_stream.py)
+VoiceAIApp (ui/tkinter_ui.py)
 VoicePipeline (main.py)
+AudioStream (core/audio_stream.py)
 LMStudioLLM : LLMProvider (core/lmstudio_client.py)
-VoiceActivityDetector (core/vad.py)
 OllamaLLM : LLMProvider (core/llm.py)
-SileroTTS : TTSProvider (core/silero_tts.py)
-WhisperSTT : STTProvider (core/stt.py)
-XTSTTTS : TTSProvider (core/tts.py)
-AudioPlayer (core/audio_output.py)
-LMStudioClient (core/lmstudio_client.py)
+WakeWordListener (core/wake_word.py)
+TestContainsWakeWord (tests/test_wake_word.py)
+VoiceActivityDetector (core/vad.py)
+VoiceAIClient (ipc/client.py)
+TestNormalize (tests/test_wake_word.py)
 
 ## Entry Points
 - check_stage_5.py
+- check_stage_6.py
+- check_stage_7.py
+- check_stage_8.py
 - main.py
 - utils/audio_devices.py
 - utils/tts_speakers.py
@@ -173,32 +176,49 @@ LMStudioClient (core/lmstudio_client.py)
   classes: BootstrapResult
   functions: _force_utf8_stdout, bootstrap
   imports: __future__, dataclasses, logging_config, utils.audio_devices
-  imported_by: main.py
+  imported_by: check_stage_6.py, main.py, ui/tkinter_ui.py
 
 **check_stage_5.py** (91 lines) [has main]
   functions: main
   imports: __future__, main
 
-**config.py** (134 lines)
+**check_stage_6.py** (272 lines) [has main]
+  functions: _banner, _pass, _fail, _test_health, _test_generate_only +4
+  imports: __future__, time, traceback, pathlib, bootstrap
+
+**check_stage_7.py** (121 lines) [has main]
+  functions: main
+  imports: __future__, traceback
+
+**check_stage_8.py** (114 lines) [has main]
+  functions: main
+  imports: __future__, traceback
+
+**config.py** (212 lines)
   imports: pathlib
-  imported_by: logging_config.py, main.py, core/audio_stream.py, core/llm.py, core/lmstudio_client.py
+  imported_by: check_stage_6.py, logging_config.py, main.py, core/audio_stream.py, core/llm.py
 
 **logging_config.py** (47 lines)
   functions: setup_logging
   imports: logging, logging.handlers, config
   imported_by: bootstrap.py
 
-**main.py** (312 lines) [has main]
+**main.py** (721 lines) [has main]
   classes: TurnResult, VoicePipeline
-  functions: _tts_requires_gpu_swap, run_console_mode, main
-  imports: __future__, argparse, logging, time, dataclasses
-  imported_by: check_stage_5.py
+  functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
+  imports: __future__, argparse, logging, threading, time
+  imported_by: check_stage_5.py, check_stage_6.py, ipc/server.py
 
 ## core/
 **__init__.py** (119 lines) [package init]
   functions: _make_whisper, _make_ollama, _make_lmstudio, _make_xtts, _make_silero +3
   imports: __future__, config, core.base, utils.errors
   imported_by: main.py
+
+**audio_beep.py** (38 lines)
+  functions: generate_beep
+  imports: __future__, numpy
+  imported_by: core/wake_word.py
 
 **audio_output.py** (75 lines)
   classes: AudioPlayer
@@ -216,7 +236,7 @@ LMStudioClient (core/lmstudio_client.py)
   imports: __future__, abc
   imported_by: core/llm.py, core/lmstudio_client.py, core/silero_tts.py, core/stt.py, core/tts.py
 
-**llm.py** (106 lines)
+**llm.py** (160 lines)
   classes: OllamaLLM
   functions: is_thinking_model
   imports: __future__, logging, config, core.base, core.ollama_client
@@ -227,12 +247,12 @@ LMStudioClient (core/lmstudio_client.py)
   imports: __future__, enum, httpx
   imported_by: core/lmstudio_client.py, core/ollama_client.py
 
-**lmstudio_client.py** (301 lines)
+**lmstudio_client.py** (365 lines)
   classes: GenerateResult, LMStudioClient, LMStudioLLM
   functions: _is_thinking_model
   imports: __future__, logging, time, dataclasses, httpx
 
-**ollama_client.py** (177 lines)
+**ollama_client.py** (181 lines)
   classes: GenerateResult, OllamaClient
   imports: __future__, logging, time, dataclasses, httpx
   imported_by: core/llm.py
@@ -241,19 +261,19 @@ LMStudioClient (core/lmstudio_client.py)
   functions: compute_rms, normalize_audio, resample_audio
   imports: __future__, logging, pathlib, numpy, soundfile
 
-**prompt_manager.py** (45 lines)
-  functions: strip_think_tags, clean_llm_response
+**prompt_manager.py** (129 lines)
+  functions: strip_think_tags, strip_thinking_chains, detect_thinking_markers, clean_llm_response
   imports: __future__
-  imported_by: core/llm.py, core/lmstudio_client.py
+  imported_by: main.py, core/llm.py, core/lmstudio_client.py
 
-**silero_tts.py** (241 lines)
+**silero_tts.py** (351 lines)
   classes: SileroTTS
-  functions: _sanitize_for_silero
+  functions: _truncate_at_sentence, _sanitize_for_silero, _transliterate_word, _transliterate_latin
   imports: __future__, gc, logging, time, pathlib
 
-**stt.py** (183 lines)
+**stt.py** (232 lines)
   classes: WhisperSTT
-  functions: _vram_snapshot, _load_audio_float32
+  functions: _is_hallucination, _vram_snapshot, _load_audio_float32
   imports: __future__, gc, logging, time, pathlib
 
 **tts.py** (188 lines)
@@ -266,20 +286,59 @@ LMStudioClient (core/lmstudio_client.py)
   imports: __future__, itertools, logging, time, pathlib
   imported_by: core/silero_tts.py, core/tts.py
 
-**vad.py** (279 lines)
+**vad.py** (313 lines)
   classes: VoiceActivityDetector
   functions: _trim_trailing_silence
   imports: __future__, logging, queue, tempfile, time
   imported_by: main.py
 
+**wake_word.py** (305 lines)
+  classes: WakeWordListener
+  functions: _normalize, contains_wake_word
+  imports: __future__, logging, threading, time, config
+  imported_by: tests/test_wake_word.py
+
 ## ipc/
-**__init__.py** (1 lines) [package init]
+**__init__.py** (13 lines) [package init]
+  imports: ipc.client, ipc.protocol, ipc.server
+  imported_by: check_stage_6.py
+
+**client.py** (118 lines)
+  classes: IPCRemoteError, VoiceAIClient
+  imports: __future__, logging, socket, uuid, config
+  imported_by: check_stage_6.py, ipc/__init__.py
+
+**protocol.py** (110 lines)
+  classes: ErrorCode, ProtocolError
+  functions: send_line, recv_line
+  imports: __future__, socket, enum
+  imported_by: ipc/client.py, ipc/schemas.py, ipc/server.py, ipc/__init__.py
+
+**schemas.py** (124 lines)
+  classes: RequestEnvelope, ErrorBody, ResponseEnvelope, HealthCheckParams, GenerateOnlyParams, TranscribeAndRespondParams, RecalibrateParams, HealthCheckResult, GenerateOnlyResult, TranscribeAndRespondResult, RecalibrateResult
+  imports: __future__, pydantic, ipc.protocol
+  imported_by: ipc/server.py
+
+**server.py** (302 lines)
+  classes: _RequestHandler, _Server, VoiceAIServer
+  functions: _classify, _handle_health_check, _handle_generate_only, _handle_transcribe_and_respond, _handle_recalibrate
+  imports: __future__, logging, socket, socketserver, threading
+  imported_by: ipc/__init__.py
 
 ## tests/
 **__init__.py** (1 lines) [package init]
 
+**test_wake_word.py** (84 lines)
+  classes: TestNormalize, TestContainsWakeWord
+  imports: __future__, pytest, core.wake_word
+
 ## ui/
 **__init__.py** (1 lines) [package init]
+
+**tkinter_ui.py** (1026 lines)
+  classes: _UILogHandler, VoiceAIApp
+  functions: run_ui
+  imports: __future__, logging, queue, threading, tkinter
 
 ## utils/
 **__init__.py** (1 lines) [package init]
@@ -356,6 +415,42 @@ members:
   output_channels: int
   hostapi: str
 
+## ErrorBody (ipc/schemas.py)
+inherits: BaseModel
+members:
+  code: ErrorCode
+  message: str
+
+## ErrorCode (ipc/protocol.py)
+inherits: str, Enum
+members:
+  INVALID_REQUEST
+  UNKNOWN_METHOD
+  FILE_NOT_FOUND
+  STT_ERROR
+  LLM_ERROR
+  TTS_ERROR
+  AUDIO_ERROR
+  CONFIG_ERROR
+  INTERNAL_ERROR
+"""Server-side error taxonomy. Strings so the wire stays human-readable."""
+
+## GenerateOnlyParams (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+  text: str
+  speak: bool
+"""Run LLM → TTS on a supplied user text."""
+
+## GenerateOnlyResult (ipc/schemas.py)
+inherits: BaseModel
+members:
+  input_text: str
+  output_text: str
+  audio_file: ...
+  processing_time: float
+
 ## GenerateResult [dataclass] (core/ollama_client.py)
 members:
   text: str
@@ -364,9 +459,29 @@ members:
   eval_count: ...
   prompt_eval_count: ...
 
+## HealthCheckParams (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+
+## HealthCheckResult (ipc/schemas.py)
+inherits: BaseModel
+members:
+  stt: dict[(str, Any)]
+  llm: dict[(str, Any)]
+  tts: dict[(str, Any)]
+  audio: dict[(str, Any)]
+
 ## IPCError (utils/errors.py)
 inherits: VoiceAIError
+inherited_by: IPCRemoteError
 """Raised for IPC protocol / socket issues."""
+
+## IPCRemoteError (ipc/client.py)
+inherits: IPCError
+methods:
+  def __init__(self, code: str, message: str) -> None
+"""Raised when the server replies with ``status == "error"``."""
 
 ## LLMError (utils/errors.py)
 inherits: VoiceAIError
@@ -398,17 +513,23 @@ methods:
   def __init__(self, base_url: str = LMSTUDIO_BASE_URL, *, timeout: float = OLLAMA_TIMEOUT, max_retries: int = OLLAMA_MAX_RETRIES, retry_delay: float = OLLAMA_RETRY_DELAY) -> None
   def is_healthy(self) -> bool
   def list_models(self) -> list[str]
-  def generate(self, prompt: str, *, model: str, max_tokens: ... = None, timeout: ... = None, extra_options: ... = None) -> GenerateResult
+  def generate(self, prompt: str, *, model: str, max_tokens: ... = None, timeout: ... = None, extra_options: ... = None, system_prompt: ... = None) -> GenerateResult
 """REST client for LM Studio's OpenAI-compatible server."""
 
 ## LMStudioLLM (core/lmstudio_client.py)
 inherits: LLMProvider
 methods:
-  def __init__(self, model: ... = None, *, client: ... = None, base_timeout: float = OLLAMA_TIMEOUT, base_max_tokens: int = OLLAMA_MAX_TOKENS, thinking_multiplier: int = OLLAMA_MAX_TOKENS_THINKING_MULTIPLIER) -> None
+  def __init__(self, model: ... = None, *, client: ... = None, base_timeout: float = OLLAMA_TIMEOUT, base_max_tokens: int = OLLAMA_MAX_TOKENS, thinking_multiplier: int = OLLAMA_MAX_TOKENS_THINKING_MULTIPLIER, system_prompt: ... = LLM_SYSTEM_PROMPT) -> None
   def generate(self, prompt: str) -> str
   def is_healthy(self) -> bool
   property def model(self) -> str
   property def client(self) -> LMStudioClient
+  property def last_metrics(self) -> ...
+  def list_models(self) -> list[str]
+  def set_model(self, name: str) -> None
+  def mark_thinking(self, name: str) -> None
+  def _is_thinking_now(self, name: ...) -> bool
+  def _maybe_mark_thinking(self, name: ..., raw_text: str) -> None
   def _ensure_model(self) -> str
 """``LLMProvider`` talking to LM Studio; returns TTS-ready text."""
 
@@ -419,7 +540,7 @@ methods:
   def __init__(self, base_url: str = OLLAMA_BASE_URL, *, timeout: float = OLLAMA_TIMEOUT, max_retries: int = OLLAMA_MAX_RETRIES, retry_delay: float = OLLAMA_RETRY_DELAY) -> None
   def is_healthy(self) -> bool
   def list_models(self) -> list[str]
-  def generate(self, prompt: str, *, model: ... = None, max_tokens: ... = None, timeout: ... = None, extra_options: ... = None) -> GenerateResult
+  def generate(self, prompt: str, *, model: ... = None, max_tokens: ... = None, timeout: ... = None, extra_options: ... = None, system_prompt: ... = None) -> GenerateResult
 """Minimal REST client around Ollama's ``/api/generate`` endpoint."""
 
 ## OllamaError (utils/errors.py)
@@ -429,12 +550,55 @@ inherits: LLMError
 ## OllamaLLM (core/llm.py)
 inherits: LLMProvider
 methods:
-  def __init__(self, model: str = OLLAMA_MODEL, *, client: ... = None, base_timeout: float = OLLAMA_TIMEOUT, base_max_tokens: int = OLLAMA_MAX_TOKENS, thinking_multiplier: int = OLLAMA_MAX_TOKENS_THINKING_MULTIPLIER) -> None
+  def __init__(self, model: str = OLLAMA_MODEL, *, client: ... = None, base_timeout: float = OLLAMA_TIMEOUT, base_max_tokens: int = OLLAMA_MAX_TOKENS, thinking_multiplier: int = OLLAMA_MAX_TOKENS_THINKING_MULTIPLIER, system_prompt: ... = LLM_SYSTEM_PROMPT) -> None
   def generate(self, prompt: str) -> str
   def is_healthy(self) -> bool
   property def model(self) -> str
   property def client(self) -> OllamaClient
+  property def last_metrics(self) -> ...
+  def list_models(self) -> list[str]
+  def set_model(self, name: str) -> None
+  def mark_thinking(self, name: str) -> None
+  def _is_thinking_now(self, name: ...) -> bool
+  def _maybe_mark_thinking(self, name: ..., raw_text: str) -> None
 """``LLMProvider`` that talks to Ollama and returns TTS-ready text."""
+
+## ProtocolError (ipc/protocol.py)
+inherits: Exception
+"""Raised by the framing layer for malformed or oversized frames."""
+
+## RecalibrateParams (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+  duration: ...
+"""Re-run the VAD calibration (2 sec of silence expected)."""
+
+## RecalibrateResult (ipc/schemas.py)
+inherits: BaseModel
+members:
+  noise_rms: float
+  threshold: float
+  duration: float
+
+## RequestEnvelope (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+  id: ...
+  method: str
+  params: dict[(str, Any)]
+"""Top-level wire request."""
+
+## ResponseEnvelope (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+  id: ...
+  status: Literal[('ok', 'error')]
+  result: ...
+  error: ...
+"""Top-level wire response. Exactly one of ``result`` / ``error`` is set."""
 
 ## STTError (utils/errors.py)
 inherits: VoiceAIError
@@ -472,6 +636,46 @@ methods:
   def unload_model(self) -> None
 """Text-to-speech backend (e.g. XTTS-v2, MeloTTS)."""
 
+## TestContainsWakeWord (tests/test_wake_word.py)
+members:
+  WAKE
+  ALIASES
+methods:
+  def test_exact_match(self) -> None
+  def test_with_punctuation(self) -> None
+  def test_alias_match(self) -> None
+  def test_does_not_match_substring(self) -> None
+  def test_case_insensitive(self) -> None
+  def test_empty_text(self) -> None
+  def test_no_aliases(self) -> None
+  def test_word_in_middle_of_phrase(self) -> None
+  def test_negatives(self, text: str) -> None
+
+## TestNormalize (tests/test_wake_word.py)
+methods:
+  def test_lowercases(self) -> None
+  def test_strips_punctuation(self) -> None
+  def test_multiple_spaces_ok(self) -> None
+  def test_empty(self) -> None
+  def test_cyrillic_stays(self) -> None
+  def test_digits_kept(self) -> None
+
+## TranscribeAndRespondParams (ipc/schemas.py)
+inherits: BaseModel
+members:
+  model_config
+  audio_file: str
+  speak: bool
+"""Run STT → LLM → TTS on a pre-recorded WAV."""
+
+## TranscribeAndRespondResult (ipc/schemas.py)
+inherits: BaseModel
+members:
+  input_text: str
+  output_text: str
+  audio_file: ...
+  processing_time: float
+
 ## TurnResult [dataclass] (main.py)
 members:
   user_text: str
@@ -480,31 +684,105 @@ members:
   wav_out: ...
   total_s: float
   error: ...
+  stt_ms: ...
+  llm_ms: ...
+  tts_ms: ...
+  llm_prompt_tokens: ...
+  ...+1 more
+
+## VoiceAIApp (ui/tkinter_ui.py)
+members:
+  POLL_UI_MS
+  POLL_LEVEL_MS
+  POLL_LOG_MS
+  HEALTH_INTERVAL_S
+  MAX_LOG_LINES
+methods:
+  def __init__(self, root: tk.Tk, *, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> None
+  def _build_ui(self) -> None
+  def _attach_log_handler(self) -> None
+  def _detach_log_handler(self) -> None
+  def _on_listen(self) -> None
+  def _on_recalibrate(self) -> None
+  def _on_toggle_standby(self) -> None
+  def _on_refresh_models(self) -> None
+  def _on_apply_model(self) -> None
+  def _on_close(self) -> None
+  def _tick_shutdown(self) -> None
+  def _worker_loop(self) -> None
+  def _do_init(self, pipeline_cls: type) -> None
+  def _on_wake_event(self, state: str, payload: object) -> None
+  def _do_turn(self) -> None
+  ...+21 more
+"""Tk app shell — see module docstring for threading contract."""
+
+## VoiceAIClient (ipc/client.py)
+methods:
+  def __init__(self, host: str = IPC_HOST, port: int = IPC_PORT, timeout: float = DEFAULT_TIMEOUT) -> None
+  def health_check(self) -> dict[(str, Any)]
+  def generate_only(self, text: str, *, speak: bool = True) -> dict[(str, Any)]
+  def transcribe_and_respond(self, audio_file: str, *, speak: bool = True) -> dict[(str, Any)]
+  def recalibrate(self, duration: ... = None) -> dict[(str, Any)]
+  def _call(self, method: str, params: dict[(str, Any)]) -> dict[(str, Any)]
+"""Synchronous client for :class:`ipc.server.VoiceAIServer`.  Keeps no state between calls. Safe to cre..."""
 
 ## VoiceAIError (utils/errors.py)
 inherits: Exception
 inherited_by: AudioError, STTError, LLMError, TTSError, IPCError, ConfigError
 """Base class for all voice-assistant-specific errors."""
 
+## VoiceAIServer (ipc/server.py)
+methods:
+  def __init__(self, pipeline: 'VoicePipeline', host: str = IPC_HOST, port: int = IPC_PORT) -> None
+  property def address(self) -> tuple[(str, int)]
+  def start(self) -> None
+  def stop(self) -> None
+"""Manages the background TCP server lifetime.  Typical use::      server = VoiceAIServer(pipeline)    ..."""
+
 ## VoiceActivityDetector (core/vad.py)
 methods:
   def __init__(self, stream: AudioStream, *, calibration_multiplier: float = CALIBRATION_MULTIPLIER, min_threshold: float = MIN_ENERGY_THRESHOLD, pause_threshold: float = PAUSE_THRESHOLD, damping: float = DYNAMIC_ENERGY_DAMPING, ratio: float = DYNAMIC_ENERGY_RATIO) -> None
   property def threshold(self) -> float
   property def noise_rms(self) -> float
+  def reset_threshold(self) -> None
   def calibrate(self, duration: float = CALIBRATION_DURATION) -> tuple[(float, float)]
-  def record_until_silence(self, pause_threshold: ... = None, max_duration: float = 30.0, output_path: ... = None) -> str
+  def record_until_silence(self, pause_threshold: ... = None, max_duration: float = 30.0, output_path: ... = None, initial_silence_timeout: ... = None) -> str
   def _require_running(self) -> None
 """RMS-threshold VAD driven by a shared ``AudioStream``."""
 
 ## VoicePipeline (main.py)
 methods:
   def __init__(self) -> None
-  def start(self) -> None
+  property def lock(self) -> threading.Lock
+  property def stream(self) -> AudioStream
+  property def vad(self) -> ...
+  property def stt(self)
+  property def player(self) -> AudioPlayer
+  def start(self, on_stage: ... = None) -> None
   def stop(self) -> None
-  def process_voice_input(self) -> TurnResult
-  def _speak(self, text: str) -> str
-  def _speak_safely(self, text: str) -> ...
+  def process_voice_input(self, on_stage: ... = None) -> TurnResult
+  def process_voice_input_from_wav(self, wav_in: str, on_stage: ... = None) -> TurnResult
+  def _process_voice_input_locked(self, on_stage: ... = None, wav_in: ... = None) -> TurnResult
+  def transcribe_file(self, audio_path: str, *, speak: bool = True) -> dict[(str, object)]
+  def generate_text(self, text: str, *, speak: bool = True) -> dict[(str, object)]
+  def recalibrate(self, duration: ... = None) -> dict[(str, float)]
+  def list_llm_models(self) -> list[str]
+  ...+5 more
 """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
+
+## WakeWordListener (core/wake_word.py)
+methods:
+  def __init__(self, pipeline, *, on_state: ... = None, wake_word: str = WAKE_WORD, aliases: Sequence[str] = tuple(...), scan_window: float = WAKE_WORD_SCAN_WINDOW, active_timeout: float = WAKE_WORD_ACTIVE_TIMEOUT) -> None
+  def start(self) -> None
+  def stop(self, timeout: ... = None) -> None
+  def enable(self) -> None
+  def disable(self) -> None
+  property def is_enabled(self) -> bool
+  def _loop(self) -> None
+  def _iterate(self) -> None
+  def _play_beep(self, samples) -> None
+  def _emit(self, state: str, payload: object = None) -> None
+"""Background wake-word listener driving the standby / active cycle."""
 
 ## WhisperSTT (core/stt.py)
 inherits: STTProvider
@@ -526,6 +804,33 @@ methods:
   property def is_loaded(self) -> bool
 """Coqui XTTS-v2 backend (multilingual, voice-cloning)."""
 
+## _RequestHandler (ipc/server.py)
+inherits: socketserver.BaseRequestHandler
+members:
+  server: '_Server'
+methods:
+  def handle(self) -> None
+  def _send_error(self, sock: socket.socket, req_id: ..., code: ErrorCode, message: str) -> None
+"""One connection, one request, one response. Then close."""
+
+## _Server (ipc/server.py)
+inherits: socketserver.ThreadingTCPServer
+members:
+  allow_reuse_address
+  daemon_threads
+methods:
+  def __init__(self, server_address: tuple[(str, int)], pipeline: 'VoicePipeline') -> None
+"""Stash the pipeline reference on the server so handlers can reach it."""
+
+## _UILogHandler (ui/tkinter_ui.py)
+inherits: logging.Handler
+members:
+  _FMT
+methods:
+  def __init__(self, sink: queue.Queue[tuple[(int, str)]]) -> None
+  def emit(self, record: logging.LogRecord) -> None
+"""Ship formatted records into a bounded queue for the UI log viewer."""
+
 
 ---
 
@@ -538,6 +843,23 @@ def bootstrap(verbose: bool = True) -> BootstrapResult
 ## check_stage_5.py
 def main() -> int
 
+## check_stage_6.py
+def _banner(title: str) -> None
+def _fail(msg: str) -> None
+def _pass(msg: str) -> None
+def _test_error_paths(client: VoiceAIClient) -> bool
+def _test_generate_only(client: VoiceAIClient) -> bool
+def _test_health(client: VoiceAIClient) -> bool
+def _test_recalibrate(client: VoiceAIClient) -> bool
+def _test_transcribe(client: VoiceAIClient) -> bool
+def main() -> int
+
+## check_stage_7.py
+def main() -> int
+
+## check_stage_8.py
+def main() -> int
+
 ## core/__init__.py
 def _make_lmstudio() -> LLMProvider
 def _make_ollama() -> LLMProvider
@@ -547,6 +869,9 @@ def _make_xtts() -> TTSProvider
 def create_llm_provider(name: ... = None) -> LLMProvider
 def create_stt_provider(name: ... = None) -> STTProvider
 def create_tts_provider(name: ... = None) -> TTSProvider
+
+## core/audio_beep.py
+def generate_beep(freq_hz: float, duration_ms: float, sample_rate: int = 24000, amplitude: float = 0.3, fade_ms: float = 10.0) -> np.ndarray
 
 ## core/audio_stream.py
 def _compute_rms_int16(samples: np.ndarray) -> float
@@ -569,12 +894,18 @@ def resample_audio(samples: np.ndarray, orig_sr: int, target_sr: int) -> np.ndar
 
 ## core/prompt_manager.py
 def clean_llm_response(text: str) -> str
+def detect_thinking_markers(text: str) -> bool
 def strip_think_tags(text: str) -> str
+def strip_thinking_chains(text: str) -> str
 
 ## core/silero_tts.py
 def _sanitize_for_silero(text: str) -> str
+def _transliterate_latin(text: str) -> str
+def _transliterate_word(word: str) -> str
+def _truncate_at_sentence(text: str, limit: int = _SILERO_MAX_CHARS) -> str
 
 ## core/stt.py
+def _is_hallucination(text: str) -> bool
 def _load_audio_float32(path: Path) -> np.ndarray
 def _vram_snapshot() -> str
 
@@ -589,13 +920,33 @@ def resolve_speaker_wav(override: ... = None) -> Path
 ## core/vad.py
 def _trim_trailing_silence(audio: np.ndarray, *, sample_rate: int, threshold: float, keep_ms: int, chunk_size: int) -> np.ndarray
 
+## core/wake_word.py
+def _normalize(text: str) -> list[str]
+def contains_wake_word(text: str, wake_word: str, aliases: Iterable[str] = ...) -> bool
+
+## ipc/protocol.py
+def recv_line(sock: socket.socket) -> dict[(str, Any)]
+def send_line(sock: socket.socket, payload: dict[(str, Any)]) -> None
+
+## ipc/server.py
+def _classify(exc: BaseException) -> ErrorCode
+def _handle_generate_only(pipeline: 'VoicePipeline', params: GenerateOnlyParams) -> dict[(str, Any)]
+def _handle_health_check(pipeline: 'VoicePipeline', _params: HealthCheckParams) -> dict[(str, Any)]
+def _handle_recalibrate(pipeline: 'VoicePipeline', params: RecalibrateParams) -> dict[(str, Any)]
+def _handle_transcribe_and_respond(pipeline: 'VoicePipeline', params: TranscribeAndRespondParams) -> dict[(str, Any)]
+
 ## logging_config.py
 def setup_logging(level: ... = None) -> logging.Logger
 
 ## main.py
+def _start_ipc_server(pipeline: VoicePipeline, host: str, port: int)
 def _tts_requires_gpu_swap() -> bool
 def main() -> int
-def run_console_mode() -> int
+def run_console_mode(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
+def run_ipc_mode(*, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
+
+## ui/tkinter_ui.py
+def run_ui(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
 ## utils/audio_devices.py
 def _safe(text: str) -> str
@@ -617,13 +968,18 @@ def main() -> int
 ## core/
 """Provider factories.  Keeps orchestration code (``main.py``, check scripts, IPC) free from concrete imports: ``create_stt_provider('whisper')`` is all """
 __all__ = ['LLMProvider', 'STTProvider', 'TTSProvider', 'create_llm_provider', 'create_stt_provider', 'create_tts_provider']
-modules: audio_output, audio_stream, base, llm, llm_errors, lmstudio_client, ollama_client, preprocessing, prompt_manager, silero_tts, stt, tts, tts_utils, vad
+modules: audio_beep, audio_output, audio_stream, base, llm, llm_errors, lmstudio_client, ollama_client, preprocessing, prompt_manager, silero_tts, stt, tts, tts_utils, vad, wake_word
 
 ## ipc/
+"""IPC package — exposes server/client entry points for Stage 6.  The wire protocol is a single JSON object per line over TCP (see ``protocol``). Orchest"""
+__all__ = ['ErrorCode', 'VoiceAIClient', 'VoiceAIServer']
+modules: client, protocol, schemas, server
 
 ## tests/
+modules: test_wake_word
 
 ## ui/
+modules: tkinter_ui
 
 ## utils/
 modules: audio_devices, errors, helpers, tts_speakers
@@ -635,6 +991,7 @@ modules: audio_devices, errors, helpers, tts_speakers
 
 ## Core/Main
 - core/__init__.py
+- core/audio_beep.py
 - core/audio_output.py
 - core/audio_stream.py
 - core/base.py
@@ -643,8 +1000,10 @@ modules: audio_devices, errors, helpers, tts_speakers
 - core/lmstudio_client.py
 - core/ollama_client.py
 - core/preprocessing.py
-- core/prompt_manager.py
-- ...and 6 more
+- ...and 8 more
+
+## Models/Entities
+- ipc/schemas.py
 
 ## Utils/Helpers
 - utils/__init__.py
@@ -659,9 +1018,17 @@ modules: audio_devices, errors, helpers, tts_speakers
 
 ## Tests
 - tests/__init__.py
+- tests/test_wake_word.py
 
 ## Other
 - bootstrap.py
 - check_stage_5.py
+- check_stage_6.py
+- check_stage_7.py
+- check_stage_8.py
 - ipc/__init__.py
+- ipc/client.py
+- ipc/protocol.py
+- ipc/server.py
 - ui/__init__.py
+- ...and 1 more
