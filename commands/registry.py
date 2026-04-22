@@ -61,19 +61,21 @@ def build_default_registry() -> CommandRegistry:
     :class:`CommandRegistry` doesn't pay for the full command tree.
     """
     from commands.note_command import NoteCommand
+    from commands.player_commands import (
+        MuteCommand,
+        PauseCommand,
+        ResumeCommand,
+        UnmuteCommand,
+        VolumeDownCommand,
+        VolumeUpCommand,
+    )
     from commands.question_command import QuestionCommand
     from commands.screenshot_command import ScreenshotCommand
     from commands.stubs import (
         CancelCommand,
-        MuteCommand,
-        PauseCommand,
-        ResumeCommand,
         SeekBackwardCommand,
         SeekForwardCommand,
         StopCommand,
-        UnmuteCommand,
-        VolumeDownCommand,
-        VolumeUpCommand,
     )
 
     registry = CommandRegistry(

@@ -7,10 +7,22 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 
-from config import LOG_BACKUP_COUNT, LOG_FILE, LOG_LEVEL, LOG_MAX_BYTES, LOGS_DIR
+from config import (
+    LOG_BACKUP_COUNT,
+    LOG_FILE,
+    LOG_LEVEL,
+    LOG_MAX_BYTES,
+    LOGS_DIR,
+    UNRECOGNIZED_LOG_FILE,
+)
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Имя dedicated-логгера для нераспознанных фраз. Не пишет в общий
+# voice_ai.log и в консоль — только в свой файл, чтобы было удобно
+# периодически просматривать «что чаще всего промахивается».
+UNRECOGNIZED_LOGGER_NAME = "shura.unrecognized"
 
 
 def setup_logging(level: str | int | None = None) -> logging.Logger:
@@ -41,6 +53,23 @@ def setup_logging(level: str | int | None = None) -> logging.Logger:
     )
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
+
+    # Отдельный логгер для нераспознанных команд — пишет ТОЛЬКО в
+    # свой файл, не попадает в общий voice_ai.log и в консоль.
+    unrec = logging.getLogger(UNRECOGNIZED_LOGGER_NAME)
+    unrec.setLevel(logging.INFO)
+    unrec.propagate = False  # критично: иначе всё уйдёт и в root → consoles
+    unrec_formatter = logging.Formatter(
+        "%(asctime)s\t%(message)s", datefmt=_DATE_FORMAT
+    )
+    unrec_handler = RotatingFileHandler(
+        UNRECOGNIZED_LOG_FILE,
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    unrec_handler.setFormatter(unrec_formatter)
+    unrec.addHandler(unrec_handler)
 
     root._voice_ai_configured = True  # type: ignore[attr-defined]
     return root

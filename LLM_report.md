@@ -119,15 +119,18 @@
 # PROJECT REPORTS
 
 # Project: .
-Source: Python: 39 py | 6,710 lines | 251 KB
+Source: Python: 56 py | 8,481 lines | 328 KB
 Language: PYTHON
 
 ## Packages
+commands/ — 8 modules, 0 subpackages
 core/ — 16 modules, 0 subpackages
 ipc/ — 4 modules, 0 subpackages
+players/ — 0 modules, 0 subpackages
+system/ — 4 modules, 0 subpackages
 tests/ — 1 modules, 0 subpackages
 ui/ — 1 modules, 0 subpackages
-utils/ — 4 modules, 0 subpackages
+utils/ — 5 modules, 0 subpackages
 
 ## Key Classes
 VoiceAIApp (ui/tkinter_ui.py)
@@ -136,35 +139,39 @@ AudioStream (core/audio_stream.py)
 LMStudioLLM : LLMProvider (core/lmstudio_client.py)
 OllamaLLM : LLMProvider (core/llm.py)
 WakeWordListener (core/wake_word.py)
+MuteController (system/audio_session_mute.py)
 TestContainsWakeWord (tests/test_wake_word.py)
 VoiceActivityDetector (core/vad.py)
-VoiceAIClient (ipc/client.py)
-TestNormalize (tests/test_wake_word.py)
+SessionManager (system/session_manager.py)
 
 ## Entry Points
 - check_stage_5.py
 - check_stage_6.py
 - check_stage_7.py
 - check_stage_8.py
+- check_stage_m4.py
 - main.py
 - utils/audio_devices.py
+- utils/generate_ack_phrases.py
 - utils/tts_speakers.py
 
 ## Dependencies
+- comtypes
 - coqui-tts
 - httpx
 - librosa
+- mss
 - numpy
 - openai-whisper
 - pyaudio
+- pycaw
 - pydantic
 - pytest
 - pytest-mock
 - requests
 - scipy
 - sounddevice
-- soundfile
-- transformers
+- ...and 2 more
 
 
 ---
@@ -176,7 +183,7 @@ TestNormalize (tests/test_wake_word.py)
   classes: BootstrapResult
   functions: _force_utf8_stdout, bootstrap
   imports: __future__, dataclasses, logging_config, utils.audio_devices
-  imported_by: check_stage_6.py, main.py, ui/tkinter_ui.py
+  imported_by: check_stage_6.py, check_stage_m4.py, main.py, ui/tkinter_ui.py, utils/generate_ack_phrases.py
 
 **check_stage_5.py** (91 lines) [has main]
   functions: main
@@ -194,20 +201,69 @@ TestNormalize (tests/test_wake_word.py)
   functions: main
   imports: __future__, traceback
 
-**config.py** (212 lines)
+**check_stage_m4.py** (137 lines) [has main]
+  functions: main
+  imports: __future__, logging, time, bootstrap
+
+**config.py** (261 lines)
   imports: pathlib
-  imported_by: check_stage_6.py, logging_config.py, main.py, core/audio_stream.py, core/llm.py
+  imported_by: check_stage_6.py, logging_config.py, main.py, commands/note_command.py, commands/question_command.py
 
 **logging_config.py** (47 lines)
   functions: setup_logging
   imports: logging, logging.handlers, config
   imported_by: bootstrap.py
 
-**main.py** (721 lines) [has main]
+**main.py** (900 lines) [has main]
   classes: TurnResult, VoicePipeline
   functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
   imports: __future__, argparse, logging, threading, time
   imported_by: check_stage_5.py, check_stage_6.py, ipc/server.py
+
+## commands/
+**__init__.py** (28 lines) [package init]
+  imports: commands.base, commands.registry, commands.router
+  imported_by: main.py
+
+**base.py** (87 lines)
+  classes: CommandType, CommandContext, BaseCommand
+  imports: __future__, abc, dataclasses, enum
+  imported_by: commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py, commands/router.py
+
+**note_command.py** (112 lines)
+  classes: NoteCommand
+  functions: _extract_tail
+  imports: __future__, logging, commands.base, commands.router, config
+  imported_by: commands/question_command.py
+
+**player_commands.py** (103 lines)
+  classes: PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand
+  imports: __future__, logging, commands.base
+
+**question_command.py** (75 lines)
+  classes: QuestionCommand
+  imports: __future__, logging, commands.base, commands.note_command, config
+
+**registry.py** (103 lines)
+  classes: CommandRegistry
+  functions: build_default_registry
+  imports: __future__, logging, commands.base
+  imported_by: commands/router.py, commands/__init__.py
+
+**router.py** (147 lines)
+  classes: CommandRouter
+  functions: normalize, _strip_wake_word
+  imports: __future__, logging, commands.base, commands.registry
+  imported_by: commands/note_command.py, commands/__init__.py
+
+**screenshot_command.py** (39 lines)
+  classes: ScreenshotCommand
+  imports: __future__, logging, commands.base
+
+**stubs.py** (88 lines)
+  classes: StopCommand, CancelCommand, SeekForwardCommand, SeekBackwardCommand
+  functions: _stub_log
+  imports: __future__, logging, commands.base
 
 ## core/
 **__init__.py** (119 lines) [package init]
@@ -218,7 +274,7 @@ TestNormalize (tests/test_wake_word.py)
 **audio_beep.py** (38 lines)
   functions: generate_beep
   imports: __future__, numpy
-  imported_by: core/wake_word.py
+  imported_by: main.py, core/wake_word.py
 
 **audio_output.py** (75 lines)
   classes: AudioPlayer
@@ -270,6 +326,7 @@ TestNormalize (tests/test_wake_word.py)
   classes: SileroTTS
   functions: _truncate_at_sentence, _sanitize_for_silero, _transliterate_word, _transliterate_latin
   imports: __future__, gc, logging, time, pathlib
+  imported_by: utils/generate_ack_phrases.py
 
 **stt.py** (232 lines)
   classes: WhisperSTT
@@ -325,6 +382,32 @@ TestNormalize (tests/test_wake_word.py)
   imports: __future__, logging, socket, socketserver, threading
   imported_by: ipc/__init__.py
 
+## players/
+**__init__.py** (6 lines) [package init]
+
+## system/
+**__init__.py** (6 lines) [package init]
+  imported_by: commands/player_commands.py
+
+**audio_session_mute.py** (202 lines)
+  classes: MuteController
+  imports: __future__, logging, threading
+  imported_by: main.py
+
+**media_keys.py** (85 lines)
+  functions: _press_key, play_pause, next_track, prev_track, volume_up +1
+  imports: __future__, ctypes, logging, time
+
+**screenshot.py** (57 lines)
+  functions: take_screenshot
+  imports: __future__, logging, mss, mss.tools
+  imported_by: commands/screenshot_command.py
+
+**session_manager.py** (117 lines)
+  classes: SessionManager
+  imports: __future__, logging, threading, datetime, pathlib
+  imported_by: main.py
+
 ## tests/
 **__init__.py** (1 lines) [package init]
 
@@ -351,7 +434,11 @@ TestNormalize (tests/test_wake_word.py)
 
 **errors.py** (38 lines)
   classes: VoiceAIError, AudioError, STTError, LLMError, OllamaError, TTSError, IPCError, ConfigError
-  imported_by: main.py, core/audio_output.py, core/audio_stream.py, core/lmstudio_client.py, core/ollama_client.py
+  imported_by: main.py, commands/note_command.py, commands/question_command.py, core/audio_output.py, core/audio_stream.py
+
+**generate_ack_phrases.py** (151 lines) [has main]
+  functions: ack_filename, _enumerate_targets, main
+  imports: __future__, argparse, logging, shutil, pathlib
 
 **helpers.py** (47 lines)
   functions: save_state_atomic
@@ -398,10 +485,72 @@ methods:
   ...+3 more
 """One long-lived microphone stream with RMS monitoring."""
 
+## BaseCommand (commands/base.py)
+inherits: ABC
+inherited_by: NoteCommand, PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand, QuestionCommand, ScreenshotCommand, StopCommand, CancelCommand, SeekForwardCommand, SeekBackwardCommand
+members:
+  name: str
+  synonyms: Sequence[str]
+  command_type: CommandType
+  ack_before: ...
+  ack_after: ...
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+  def __repr__(self) -> str
+"""ABC for every assistant command.  Subclasses set the three class-level attributes and implement :met..."""
+
 ## BootstrapResult [dataclass(frozen=True)] (bootstrap.py)
 members:
   input_device: ...
   output_device: ...
+
+## CancelCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## CommandContext [dataclass] (commands/base.py)
+members:
+  pipeline: Any
+  full_text: str
+  matched_synonym: str
+  session_manager: Any
+  player_manager: Any
+  volume_control: Any
+  ui_callback: ...
+"""Everything a command may need at execution time.  Populated by :class:`VoicePipeline` per dispatch. ..."""
+
+## CommandRegistry (commands/registry.py)
+methods:
+  def __init__(self, commands: Iterable[BaseCommand] = ...) -> None
+  def register(self, command: BaseCommand) -> None
+  def get(self, name: str) -> ...
+  def __iter__(self) -> Iterator[BaseCommand]
+  def __len__(self) -> int
+  def names(self) -> list[str]
+"""Holds command instances keyed by their canonical ``name``."""
+
+## CommandRouter (commands/router.py)
+methods:
+  def __init__(self, registry: CommandRegistry, *, wake_words: Iterable[str] = ...) -> None
+  property def registry(self) -> CommandRegistry
+  def parse(self, text: str) -> ...
+  def dispatch(self, text: str, ctx: CommandContext) -> ...
+"""Parse normalised text into a :class:`BaseCommand`, then dispatch."""
+
+## CommandType (commands/base.py)
+inherits: Enum
+members:
+  GLOBAL
+  INSTANT
+  CONTENT
+  COMPOSITE
+"""Coarse classification used by the router and standby state machine.  * ``GLOBAL`` — interrupts/overr..."""
 
 ## ConfigError (utils/errors.py)
 inherits: VoiceAIError
@@ -533,6 +682,40 @@ methods:
   def _ensure_model(self) -> str
 """``LLMProvider`` talking to LM Studio; returns TTS-ready text."""
 
+## MuteCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## MuteController (system/audio_session_mute.py)
+methods:
+  def __init__(self) -> None
+  def mute_others(self) -> int
+  def unmute_others(self) -> int
+  def restore_all(self) -> None
+  property def has_muted(self) -> bool
+  def _with_com(self, fn)
+  def _mute_others_locked(self) -> int
+  def _unmute_others_locked(self) -> int
+  static def _session_key(session, proc) -> str
+"""Заглушает все чужие аудио-сессии Windows и снимает обратно."""
+
+## NoteCommand (commands/note_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  ack_before
+  NOTE_SAVED_ACK
+  synonyms
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
 ## OllamaClient (core/ollama_client.py)
 members:
   BACKEND_NAME
@@ -563,9 +746,29 @@ methods:
   def _maybe_mark_thinking(self, name: ..., raw_text: str) -> None
 """``LLMProvider`` that talks to Ollama and returns TTS-ready text."""
 
+## PauseCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
 ## ProtocolError (ipc/protocol.py)
 inherits: Exception
 """Raised by the framing layer for malformed or oversized frames."""
+
+## QuestionCommand (commands/question_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  ack_before
+  synonyms
+methods:
+  def execute(self, ctx: CommandContext) -> bool
 
 ## RecalibrateParams (ipc/schemas.py)
 inherits: BaseModel
@@ -600,6 +803,16 @@ members:
   error: ...
 """Top-level wire response. Exactly one of ``result`` / ``error`` is set."""
 
+## ResumeCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
 ## STTError (utils/errors.py)
 inherits: VoiceAIError
 """Raised when speech-to-text fails (model load, transcribe, etc.)."""
@@ -613,6 +826,47 @@ methods:
   def unload_model(self) -> None
 """Speech-to-text backend (e.g. Whisper, Vosk)."""
 
+## ScreenshotCommand (commands/screenshot_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## SeekBackwardCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## SeekForwardCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## SessionManager (system/session_manager.py)
+methods:
+  def __init__(self, base_dir: ...) -> None
+  property def base_dir(self) -> Path
+  property def current_dir(self) -> ...
+  def ensure_session(self) -> Path
+  def save_screenshot(self, png_data: bytes, *, prefix: str = "screenshot") -> Path
+  def save_note(self, text: str) -> Path
+  def _ensure_session_locked(self) -> Path
+"""Хранит «текущую сессию» и пишет в неё артефакты команд."""
+
 ## SileroTTS (core/silero_tts.py)
 inherits: TTSProvider
 methods:
@@ -622,6 +876,16 @@ methods:
   def unload_model(self) -> None
   property def is_loaded(self) -> bool
 """Silero TTS backend (русская модель по умолчанию, CPU-friendly)."""
+
+## StopCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
 
 ## TTSError (utils/errors.py)
 inherits: VoiceAIError
@@ -690,6 +954,16 @@ members:
   llm_prompt_tokens: ...
   ...+1 more
 
+## UnmuteCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
 ## VoiceAIApp (ui/tkinter_ui.py)
 members:
   POLL_UI_MS
@@ -753,22 +1027,42 @@ methods:
 ## VoicePipeline (main.py)
 methods:
   def __init__(self) -> None
-  property def lock(self) -> threading.Lock
+  property def lock(self) -> threading.RLock
+  property def session(self) -> SessionManager
+  property def audio_mute(self) -> MuteController
   property def stream(self) -> AudioStream
   property def vad(self) -> ...
   property def stt(self)
   property def player(self) -> AudioPlayer
+  property def router(self) -> CommandRouter
   def start(self, on_stage: ... = None) -> None
   def stop(self) -> None
   def process_voice_input(self, on_stage: ... = None) -> TurnResult
   def process_voice_input_from_wav(self, wav_in: str, on_stage: ... = None) -> TurnResult
   def _process_voice_input_locked(self, on_stage: ... = None, wav_in: ... = None) -> TurnResult
   def transcribe_file(self, audio_path: str, *, speak: bool = True) -> dict[(str, object)]
-  def generate_text(self, text: str, *, speak: bool = True) -> dict[(str, object)]
-  def recalibrate(self, duration: ... = None) -> dict[(str, float)]
-  def list_llm_models(self) -> list[str]
-  ...+5 more
+  ...+11 more
 """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
+
+## VolumeDownCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## VolumeUpCommand (commands/player_commands.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
 
 ## WakeWordListener (core/wake_word.py)
 methods:
@@ -860,6 +1154,22 @@ def main() -> int
 ## check_stage_8.py
 def main() -> int
 
+## check_stage_m4.py
+def main() -> int
+
+## commands/note_command.py
+def _extract_tail(full_text: str, matched_synonym: str) -> str
+
+## commands/registry.py
+def build_default_registry() -> CommandRegistry
+
+## commands/router.py
+def _strip_wake_word(text: str, wake_words: Iterable[str]) -> str
+def normalize(text: str) -> str
+
+## commands/stubs.py
+def _stub_log(cmd: BaseCommand, ctx: CommandContext) -> None
+
 ## core/__init__.py
 def _make_lmstudio() -> LLMProvider
 def _make_ollama() -> LLMProvider
@@ -945,6 +1255,17 @@ def main() -> int
 def run_console_mode(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 def run_ipc_mode(*, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
+## system/media_keys.py
+def _press_key(vk: int) -> None
+def next_track() -> None
+def play_pause() -> None
+def prev_track() -> None
+def volume_down(presses: int = VOLUME_STEP_PRESSES) -> None
+def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None
+
+## system/screenshot.py
+def take_screenshot(monitor: ... = None) -> bytes
+
 ## ui/tkinter_ui.py
 def run_ui(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
@@ -953,6 +1274,11 @@ def _safe(text: str) -> str
 def get_current_devices() -> tuple[(..., ...)]
 def list_audio_devices() -> list[DeviceInfo]
 def print_devices() -> None
+
+## utils/generate_ack_phrases.py
+def _enumerate_targets() -> list[tuple[(str, str, str)]]
+def ack_filename(command_name: str, phase: str) -> str
+def main() -> int
 
 ## utils/helpers.py
 def save_state_atomic(path: ..., payload: Any) -> None
@@ -965,6 +1291,11 @@ def main() -> int
 
 # Package Structure
 
+## commands/
+"""Command subsystem for the Shurochka assistant.  The router parses post-STT text into a :class:`BaseCommand` and dispatches it. If no command matches, """
+__all__ = ['BaseCommand', 'CommandContext', 'CommandType', 'CommandRegistry', 'CommandRouter', 'build_default_registry']
+modules: base, note_command, player_commands, question_command, registry, router, screenshot_command, stubs
+
 ## core/
 """Provider factories.  Keeps orchestration code (``main.py``, check scripts, IPC) free from concrete imports: ``create_stt_provider('whisper')`` is all """
 __all__ = ['LLMProvider', 'STTProvider', 'TTSProvider', 'create_llm_provider', 'create_stt_provider', 'create_tts_provider']
@@ -975,6 +1306,13 @@ modules: audio_beep, audio_output, audio_stream, base, llm, llm_errors, lmstudio
 __all__ = ['ErrorCode', 'VoiceAIClient', 'VoiceAIServer']
 modules: client, protocol, schemas, server
 
+## players/
+"""Media player adapters (VLC / MPC-HC / YouTube) — populated in M4.  Empty in M1; package placeholder so ``commands/`` can import lazily once the real i"""
+
+## system/
+"""System-level helpers: SessionManager (M2), screenshots (M3), volume (M5).  Empty in M1 — the package exists so commands can import lazily without hitt"""
+modules: audio_session_mute, media_keys, screenshot, session_manager
+
 ## tests/
 modules: test_wake_word
 
@@ -982,7 +1320,7 @@ modules: test_wake_word
 modules: tkinter_ui
 
 ## utils/
-modules: audio_devices, errors, helpers, tts_speakers
+modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 
 
 ---
@@ -1005,10 +1343,14 @@ modules: audio_devices, errors, helpers, tts_speakers
 ## Models/Entities
 - ipc/schemas.py
 
+## API/Routes
+- commands/router.py
+
 ## Utils/Helpers
 - utils/__init__.py
 - utils/audio_devices.py
 - utils/errors.py
+- utils/generate_ack_phrases.py
 - utils/helpers.py
 - utils/tts_speakers.py
 
@@ -1026,9 +1368,9 @@ modules: audio_devices, errors, helpers, tts_speakers
 - check_stage_6.py
 - check_stage_7.py
 - check_stage_8.py
-- ipc/__init__.py
-- ipc/client.py
-- ipc/protocol.py
-- ipc/server.py
-- ui/__init__.py
-- ...and 1 more
+- check_stage_m4.py
+- commands/__init__.py
+- commands/base.py
+- commands/note_command.py
+- commands/player_commands.py
+- ...and 16 more

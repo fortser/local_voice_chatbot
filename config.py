@@ -13,6 +13,11 @@ LOGS_DIR = BASE_DIR / "logs"
 TESTS_DIR = BASE_DIR / "tests"
 
 LOG_FILE = LOGS_DIR / "voice_ai.log"
+# Отдельный журнал нераспознанных команд (M4+): сюда уходит каждая
+# распознанная Whisper'ом фраза, на которую роутер не нашёл команду.
+# Используется для анализа реальных формулировок пользователя — что
+# часто промахивается, какие синонимы добавить.
+UNRECOGNIZED_LOG_FILE = LOGS_DIR / "unrecognized.log"
 
 # ====== Аудио ======
 SAMPLE_RATE = 16000
@@ -38,7 +43,11 @@ DYNAMIC_ENERGY_RATIO = 1.5        # коэффициент над шумом д�
 
 # ====== STT (Whisper) ======
 STT_PROVIDER = "whisper"
-WHISPER_MODEL_SIZE = "large-v3"
+# large-v3-turbo: тот же encoder, что large-v3, но decoder обрезан с 32 → 4
+# слоёв. Распознаёт ~в 2 раза быстрее (~0.5s вместо ~1s на короткую команду),
+# WER на разговорной речи практически тот же. Минус: чуть выше шанс ошибки
+# на редких словах в длинной диктовке. Откат: вернуть "large-v3".
+WHISPER_MODEL_SIZE = "large-v3-turbo"
 WHISPER_DEVICE = "cuda"
 WHISPER_LANGUAGE = "russian"
 

@@ -35,6 +35,10 @@ pydantic==2.9.2
 # --- Screenshots (M3) ---
 mss==10.1.0                  # быстрый кросс-платформенный grab экрана
 
+# --- Player control / audio mixer (M4) ---
+pycaw==20251023              # Windows audio session mute/unmute (per-process)
+comtypes==1.4.16             # COM bindings used by pycaw
+
 # --- Testing ---
 pytest==8.3.3
 pytest-mock==3.14.0

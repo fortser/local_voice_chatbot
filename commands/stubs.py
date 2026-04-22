@@ -49,29 +49,10 @@ class CancelCommand(BaseCommand):
         return True
 
 
-# ---- INSTANT — плеер ------------------------------------------------------
-
-class PauseCommand(BaseCommand):
-    name = "pause"
-    command_type = CommandType.INSTANT
-    synonyms = ("поставь паузу", "поставь на паузу", "сделай паузу")
-    ack_after = "pause_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
+# PauseCommand, ResumeCommand → commands/player_commands.py (M4)
 
 
-class ResumeCommand(BaseCommand):
-    name = "resume"
-    command_type = CommandType.INSTANT
-    synonyms = ("сними паузу", "продолжи воспроизведение", "продолжай играть")
-    ack_after = "resume_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
-
+# ---- INSTANT — плеер (seek пока стабы, M4 не покрывает) -------------------
 
 class SeekForwardCommand(BaseCommand):
     name = "seek_forward"
@@ -95,50 +76,7 @@ class SeekBackwardCommand(BaseCommand):
         return True
 
 
-# ---- INSTANT — громкость --------------------------------------------------
-
-class VolumeUpCommand(BaseCommand):
-    name = "volume_up"
-    command_type = CommandType.INSTANT
-    synonyms = ("сделай громче", "прибавь громкость", "увеличь громкость")
-    ack_after = "volume_up_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
-
-
-class VolumeDownCommand(BaseCommand):
-    name = "volume_down"
-    command_type = CommandType.INSTANT
-    synonyms = ("сделай тише", "убавь громкость", "уменьши громкость")
-    ack_after = "volume_down_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
-
-
-class MuteCommand(BaseCommand):
-    name = "mute"
-    command_type = CommandType.INSTANT
-    synonyms = ("выключи звук", "заглуши плеер", "без звука")
-    ack_after = "mute_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
-
-
-class UnmuteCommand(BaseCommand):
-    name = "unmute"
-    command_type = CommandType.INSTANT
-    synonyms = ("включи звук", "верни звук", "со звуком")
-    ack_after = "unmute_after.wav"
-
-    def execute(self, ctx: CommandContext) -> bool:
-        _stub_log(self, ctx)
-        return True
+# Volume*/Mute/Unmute → commands/player_commands.py (M4)
 
 
 # ScreenshotCommand → commands/screenshot_command.py (M3)

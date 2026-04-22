@@ -72,10 +72,12 @@ from config import (
 )
 from core import create_llm_provider, create_stt_provider, create_tts_provider
 from core.audio_beep import generate_beep
+from logging_config import UNRECOGNIZED_LOGGER_NAME
 from core.audio_output import AudioPlayer
 from core.audio_stream import AudioStream
 from core.prompt_manager import detect_thinking_markers
 from core.vad import VoiceActivityDetector
+from system.audio_session_mute import MuteController
 from system.session_manager import SessionManager
 from utils.errors import (
     AudioError,
@@ -86,6 +88,7 @@ from utils.errors import (
 )
 
 logger = logging.getLogger(__name__)
+unrecognized_logger = logging.getLogger(UNRECOGNIZED_LOGGER_NAME)
 
 FALLBACK_NO_SPEECH = "Я не расслышал, повторите пожалуйста."
 FALLBACK_EMPTY_LLM = "Модель не ответила. Попробуйте ещё раз."
@@ -141,6 +144,8 @@ class VoicePipeline:
         self._lock = threading.RLock()
         # Lazy session — created on first save_note / save_screenshot.
         self._session = SessionManager(SESSION_BASE_DIR)
+        # Per-session mute (M4): заглушает чужие плееры, не Шурочку.
+        self._audio_mute = MuteController()
         # Pre-rendered dictation beep (in-memory, no I/O at runtime).
         self._dictate_beep = generate_beep(
             DICTATE_BEEP_FREQ,
@@ -172,6 +177,10 @@ class VoicePipeline:
     @property
     def session(self) -> SessionManager:
         return self._session
+
+    @property
+    def audio_mute(self) -> MuteController:
+        return self._audio_mute
 
     @property
     def stream(self) -> AudioStream:
@@ -264,6 +273,12 @@ class VoicePipeline:
 
     def stop(self) -> None:
         logger.info("Pipeline stop")
+        # Снять mute со всех чужих сессий, что мы заглушили — иначе
+        # пользователь останется без звука и будет лезть в системный микшер.
+        try:
+            self._audio_mute.restore_all()
+        except Exception:
+            logger.exception("audio_mute.restore_all failed")
         # Best-effort unload in reverse dependency order.
         for name, action in (
             ("tts.unload", self._tts.unload_model),
@@ -384,6 +399,10 @@ class VoicePipeline:
 
         # 4. Нераспознано — короткий бип, без LLM.
         logger.info("No command matched; LLM skipped (explicit-only mode)")
+        # Параллельно пишем в отдельный журнал нераспознанных фраз
+        # (logs/unrecognized.log) для последующего анализа: какие
+        # формулировки пользователь произносит, чего не хватает в синонимах.
+        unrecognized_logger.info(user_text)
         print("   🔇 не поняла команду")
         try:
             self._player.play_array(
