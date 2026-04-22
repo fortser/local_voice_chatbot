@@ -32,6 +32,9 @@ scipy==1.13.1
 # --- Validation / data ---
 pydantic==2.9.2
 
+# --- Screenshots (M3) ---
+mss==10.1.0                  # быстрый кросс-платформенный grab экрана
+
 # --- Testing ---
 pytest==8.3.3
 pytest-mock==3.14.0

@@ -42,19 +42,41 @@ from dataclasses import dataclass
 from typing import Callable
 
 from bootstrap import bootstrap
+from commands import (
+    CommandContext,
+    CommandRouter,
+    build_default_registry,
+)
 from config import (
+    ACK_DIR,
     CALIBRATION_DURATION,
+    COMMAND_VERBOSE_ACK,
+    DICTATE_BEEP_AMPLITUDE,
+    DICTATE_BEEP_DURATION_MS,
+    DICTATE_BEEP_FREQ,
+    DICTATE_INITIAL_TIMEOUT,
+    DICTATE_MAX_DURATION,
+    DICTATE_PAUSE_THRESHOLD,
+    UNRECOGNIZED_BEEP_AMPLITUDE,
+    UNRECOGNIZED_BEEP_DURATION_MS,
+    UNRECOGNIZED_BEEP_FREQ,
     IPC_HOST,
     IPC_PORT,
+    SESSION_BASE_DIR,
     SILERO_DEVICE,
     TTS_DEVICE,
     TTS_PROVIDER,
+    WAKE_WORD,
+    WAKE_WORD_ALIASES,
+    WAKE_WORD_BEEP_SAMPLE_RATE,
 )
 from core import create_llm_provider, create_stt_provider, create_tts_provider
+from core.audio_beep import generate_beep
 from core.audio_output import AudioPlayer
 from core.audio_stream import AudioStream
 from core.prompt_manager import detect_thinking_markers
 from core.vad import VoiceActivityDetector
+from system.session_manager import SessionManager
 from utils.errors import (
     AudioError,
     LLMError,
@@ -112,13 +134,44 @@ class VoicePipeline:
         self._tts = create_tts_provider()
         self._player = AudioPlayer()
         self._gpu_swap = _tts_requires_gpu_swap()
-        # One lock shared by the console REPL and every IPC handler — prevents
-        # overlapping mic access, overlapping GPU-swap, overlapping model I/O.
-        self._lock = threading.Lock()
+        # Reentrant: a turn that's already holding the lock can call
+        # ``dictate()`` (which also wants the lock) without deadlocking. IPC
+        # / wake-word / console mutual exclusion still works because all entry
+        # points acquire it from a thread that doesn't already hold it.
+        self._lock = threading.RLock()
+        # Lazy session — created on first save_note / save_screenshot.
+        self._session = SessionManager(SESSION_BASE_DIR)
+        # Pre-rendered dictation beep (in-memory, no I/O at runtime).
+        self._dictate_beep = generate_beep(
+            DICTATE_BEEP_FREQ,
+            DICTATE_BEEP_DURATION_MS,
+            sample_rate=WAKE_WORD_BEEP_SAMPLE_RATE,
+            amplitude=DICTATE_BEEP_AMPLITUDE,
+        )
+        # Бип «не поняла команду» — играет вместо неявного LLM-фоллбэка.
+        self._unrecognized_beep = generate_beep(
+            UNRECOGNIZED_BEEP_FREQ,
+            UNRECOGNIZED_BEEP_DURATION_MS,
+            sample_rate=WAKE_WORD_BEEP_SAMPLE_RATE,
+            amplitude=UNRECOGNIZED_BEEP_AMPLITUDE,
+        )
+        # Command router (M1). All commands are stubs in this stage; integration
+        # path: STT result is offered to the router *before* falling through to
+        # the LLM. Wake-word strip-out lives in the router itself so the same
+        # logic works in console-typed input and serial-mode (M10).
+        self._registry = build_default_registry()
+        self._router = CommandRouter(
+            self._registry,
+            wake_words=(WAKE_WORD, *WAKE_WORD_ALIASES),
+        )
 
     @property
-    def lock(self) -> threading.Lock:
+    def lock(self) -> threading.RLock:
         return self._lock
+
+    @property
+    def session(self) -> SessionManager:
+        return self._session
 
     @property
     def stream(self) -> AudioStream:
@@ -135,6 +188,10 @@ class VoicePipeline:
     @property
     def player(self) -> AudioPlayer:
         return self._player
+
+    @property
+    def router(self) -> CommandRouter:
+        return self._router
 
     # ---- lifecycle ----
 
@@ -300,63 +357,47 @@ class VoicePipeline:
 
         print(f"   «{user_text}»")
 
-        # 3. LLM
-        print("🧠 Думаю…")
-        t_llm = time.monotonic()
+        # 3. Command router (M1+M2.5).
+        # Единственный путь обработки: либо команда из реестра, либо ничего.
+        # LLM теперь вызывается только через явную QuestionCommand
+        # («ответь на вопрос …», «подскажи …»), а не как неявный фоллбэк.
+        # См. feedback memory `feedback_two_word_commands` и
+        # `feedback_explicit_llm_only`.
+        cmd_ctx = CommandContext(
+            pipeline=self,
+            full_text=user_text,
+            session_manager=self._session,
+        )
+        cmd = self._router.dispatch(user_text, cmd_ctx)
+        if cmd is not None:
+            logger.info("Turn handled by command router: %s", cmd.name)
+            print(f"   ⚡ выполнено как команда: {cmd.name}")
+            # ack_after — для INSTANT/GLOBAL играется после действия. Для
+            # CONTENT-команд (note, question) ack_after обычно None: они
+            # озвучивают результат сами (сохранённая заметка / ответ LLM).
+            self._play_ack(cmd.ack_after)
+            return TurnResult(
+                user_text, "", wav_in, None,
+                time.monotonic() - t_total,
+                stt_ms=stt_ms,
+            )
+
+        # 4. Нераспознано — короткий бип, без LLM.
+        logger.info("No command matched; LLM skipped (explicit-only mode)")
+        print("   🔇 не поняла команду")
         try:
-            llm_text = self._llm.generate(user_text).strip()
-        except LLMError as exc:
-            logger.exception("LLM failed")
-            wav_out, tts_ms = self._speak_safely(FALLBACK_LLM_ERROR)
-            return TurnResult(
-                user_text, FALLBACK_LLM_ERROR, wav_in, wav_out,
-                time.monotonic() - t_total,
-                f"llm: {exc}",
-                stt_ms=stt_ms,
-                llm_ms=(time.monotonic() - t_llm) * 1000,
-                tts_ms=tts_ms,
+            self._player.play_array(
+                self._unrecognized_beep,
+                WAKE_WORD_BEEP_SAMPLE_RATE,
+                blocking=True,
             )
-        except VoiceAIError as exc:  # e.g. ConfigError from LM Studio auto-resolve
-            logger.exception("LLM failed (config)")
-            wav_out, tts_ms = self._speak_safely(FALLBACK_LLM_ERROR)
-            return TurnResult(
-                user_text, FALLBACK_LLM_ERROR, wav_in, wav_out,
-                time.monotonic() - t_total,
-                f"llm-config: {exc}",
-                stt_ms=stt_ms,
-                llm_ms=(time.monotonic() - t_llm) * 1000,
-                tts_ms=tts_ms,
-            )
-        llm_ms = (time.monotonic() - t_llm) * 1000
-        # Prefer the client's own elapsed_s (excludes network/parse fluff
-        # around httpx) when it's reported, else fall back to wall-clock.
-        llm_metrics = getattr(self._llm, "last_metrics", None) or {}
-        if llm_metrics.get("elapsed_s") is not None:
-            llm_ms = float(llm_metrics["elapsed_s"]) * 1000
-        prompt_tokens = llm_metrics.get("prompt_tokens")
-        completion_tokens = llm_metrics.get("completion_tokens")
-
-        if not llm_text:
-            wav_out, tts_ms = self._speak_safely(FALLBACK_EMPTY_LLM)
-            return TurnResult(
-                user_text, FALLBACK_EMPTY_LLM, wav_in, wav_out,
-                time.monotonic() - t_total,
-                stt_ms=stt_ms, llm_ms=llm_ms, tts_ms=tts_ms,
-                llm_prompt_tokens=prompt_tokens,
-                llm_completion_tokens=completion_tokens,
-            )
-
-        print(f"   «{llm_text}»")
-
-        # 4+5. TTS + playback
-        _emit("speaking")
-        wav_out, tts_ms = self._speak_safely(llm_text)
+        except AudioError:
+            logger.exception("Unrecognized beep failed")
         return TurnResult(
-            user_text, llm_text, wav_in, wav_out,
+            user_text, "", wav_in, None,
             time.monotonic() - t_total,
-            stt_ms=stt_ms, llm_ms=llm_ms, tts_ms=tts_ms,
-            llm_prompt_tokens=prompt_tokens,
-            llm_completion_tokens=completion_tokens,
+            error="no_command_match",
+            stt_ms=stt_ms,
         )
 
     # ---- IPC-oriented operations ----
@@ -529,6 +570,131 @@ class VoicePipeline:
                 "threshold": float(self._vad.threshold) if self._vad else None,
             },
         }
+
+    # ---- ack-фразы (M2.6) ----
+
+    def _play_ack(self, filename: str | None) -> bool:
+        """Проиграть pre-rendered ack-WAV. Возвращает True, если сыграли.
+
+        Молча возвращает False если:
+        - фича выключена (`COMMAND_VERBOSE_ACK = False`);
+        - ``filename`` не задан (команда не озвучивает эту фазу);
+        - файла нет на диске (например, забыли запустить
+          `python -m utils.generate_ack_phrases`).
+
+        Воспроизведение — blocking, чтобы ack-фраза не накладывалась на
+        следующий шаг (бип-стартер диктовки или TTS-ответ).
+        """
+        if not COMMAND_VERBOSE_ACK or not filename:
+            return False
+        path = ACK_DIR / filename
+        if not path.is_file():
+            logger.warning(
+                "Ack-WAV не найден: %s — запустите "
+                "`python -m utils.generate_ack_phrases`", path,
+            )
+            return False
+        try:
+            self._player.play_file(str(path))
+            return True
+        except AudioError:
+            logger.exception("Ack playback failed: %s", path)
+            return False
+
+    # ---- dictation (M2) ----
+
+    def dictate(
+        self,
+        *,
+        ack_filename: str | None = None,
+        pause_threshold: float = DICTATE_PAUSE_THRESHOLD,
+        max_duration: float = DICTATE_MAX_DURATION,
+        initial_silence_timeout: float = DICTATE_INITIAL_TIMEOUT,
+    ) -> str:
+        """Записать надиктовку, прогнать через STT, вернуть строку.
+
+        Используется командами CONTENT-типа (NoteCommand и далее
+        ScreenshotNoteCommand). Не делает TTS — только звуковой бип-стартер
+        и распознавание; озвучивает результат вызывающая команда.
+
+        Lock реентрантный: метод можно вызывать как изнутри уже идущего хода
+        (router → command), так и снаружи (например, из теста). Возвращает
+        ``""``, если человек промолчал дольше ``initial_silence_timeout``.
+        """
+        assert self._vad is not None, "start() must be called first"
+        with self._lock:
+            logger.info(
+                "Dictate: pause=%.1fs, max=%.1fs, initial_timeout=%.1fs",
+                pause_threshold, max_duration, initial_silence_timeout,
+            )
+            print("🎤 Диктуйте…")
+            # Если ack-фраза есть — играем её (она уже несёт смысл «диктуйте»);
+            # иначе старый беп-стартер 1200 Гц.
+            if not self._play_ack(ack_filename):
+                try:
+                    self._player.play_array(
+                        self._dictate_beep,
+                        WAKE_WORD_BEEP_SAMPLE_RATE,
+                        blocking=True,
+                    )
+                except AudioError:
+                    logger.exception("Dictate beep failed; продолжаем без сигнала")
+
+            # Свежий порог после возможного дрейфа за время сканирующих
+            # итераций wake-word или предыдущих ходов.
+            self._vad.reset_threshold()
+
+            try:
+                wav = self._vad.record_until_silence(
+                    pause_threshold=pause_threshold,
+                    max_duration=max_duration,
+                    initial_silence_timeout=initial_silence_timeout,
+                )
+            except AudioError as exc:
+                logger.info("Dictate: тишина (%s)", exc)
+                return ""
+
+            try:
+                text = self._stt.transcribe(wav).strip()
+            except STTError as exc:
+                logger.exception("Dictate: STT упал")
+                raise STTError(f"dictate: {exc}") from exc
+
+            logger.info("Dictate transcript: %r", text[:120])
+            return text
+
+    # ---- Q&A для QuestionCommand (M2.5) ----
+
+    def answer_question(self, question: str) -> str:
+        """Прогнать вопрос через LLM и озвучить ответ.
+
+        Используется :class:`QuestionCommand`. Возвращает текст ответа.
+        Не входит в обычный поток ``_process_voice_input_locked`` — там
+        теперь нет неявного фоллбэка в LLM, обращение к модели возможно
+        только через явную команду.
+
+        Lock реентрантный — вызов из-под турного lock'а (router) безопасен.
+        """
+        question = (question or "").strip()
+        if not question:
+            return ""
+        with self._lock:
+            print("🧠 Думаю…")
+            try:
+                answer = self._llm.generate(question).strip()
+            except (LLMError, VoiceAIError) as exc:
+                logger.exception("answer_question: LLM упал")
+                self._speak_safely(FALLBACK_LLM_ERROR)
+                raise LLMError(f"answer_question: {exc}") from exc
+
+            if not answer:
+                logger.info("answer_question: LLM вернул пустую строку")
+                self._speak_safely(FALLBACK_EMPTY_LLM)
+                return ""
+
+            print(f"   «{answer}»")
+            self._speak_safely(answer)
+            return answer
 
     # ---- TTS helpers ----
 

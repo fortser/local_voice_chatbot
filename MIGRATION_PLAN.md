@@ -30,9 +30,9 @@ overlay-окно. Wake word, STT, TTS, LLM, VAD, audio I/O **уже есть** �
 
 | Этап | Название | Что добавляется | Приёмка |
 |---|---|---|---|
-| M1 | Каркас и роутер команд | Пакеты `commands/`, `system/`, `players/`; CommandRouter; интеграция в VoicePipeline | `check_stage_m1.py` |
-| M2 | SessionManager + «запиши заметку» | `system/session_manager.py`, NoteCommand с диктовкой | `check_stage_m2.py` |
-| M3 | Скриншоты | `system/screenshot.py` (mss), ScreenshotCommand | `check_stage_m3.py` |
+| M1 ✓ | Каркас и роутер команд | Пакеты `commands/`, `system/`, `players/`; CommandRouter; интеграция в VoicePipeline | принято |
+| M2 ✓ | SessionManager + «запиши заметку» + 2-сл. синонимы + явный Q&A + ack-фразы | `system/session_manager.py`, NoteCommand/QuestionCommand, валидация ≥2 слов, нет неявного LLM-фоллбэка, pre-rendered ack-WAV в `assets/ack/` | принято |
+| M3 ✓ | Скриншоты | `system/screenshot.py` (mss), ScreenshotCommand | принято |
 | M4 | Управление плеером (VLC/MPC/YouTube) | `players/` с детектором, пауза/продолжить | `check_stage_m4.py` |
 | M5 | Громкость (pycaw COM worker) | `system/volume_control.py`, mute/громче/тише | `check_stage_m5.py` |
 | M6 | Перемотка + остановка + отмена | Seek ±, StopCommand, CancelCommand | `check_stage_m6.py` |
@@ -42,6 +42,87 @@ overlay-окно. Wake word, STT, TTS, LLM, VAD, audio I/O **уже есть** �
 | M10 | Q&A команда + полировка | «Шурочка, ответь на вопрос …» в LLM, серийный режим | `check_stage_m10.py` |
 
 Предполагаемый объём: M1–M10, каждый этап — 1 рабочая сессия.
+
+---
+
+## Открытые архитектурные вопросы
+
+Эти решения фиксируются **до** старта соответствующего этапа. Без ответа
+этап не начинается — иначе придётся переписывать задним числом.
+
+### Q1. Прерывание `dictate()` командой Cancel/Stop (блокирует M2, решается в M6)
+
+VAD-запись внутри `pipeline.dictate()` блокирующая и держит `pipeline.lock`.
+Нужен механизм прерывания извне.
+
+**Решение:** добавить `threading.Event` (`cancel_event`) в `VoicePipeline`.
+`VAD.record_until_silence(..., cancel_event=...)` периодически (каждый
+аудио-чанк, ~30 мс) проверяет флаг и выходит с `CancelledError`. Wake-word
+listener **продолжает крутиться параллельно** диктовке в собственном потоке
+(без lock — он только слушает, не пишет в pipeline), и при распознавании
+`StopCommand`/`CancelCommand` выставляет `cancel_event`. Команды Cancel/Stop
+не берут `pipeline.lock` — они только сигналят.
+
+### Q2. VRAM swap во время `dictate()` (M2)
+
+Для диктовки Whisper обязан быть в VRAM. Если `TTS_PROVIDER=xtts` + CUDA,
+стандартный цикл хода выгружает Whisper перед TTS.
+
+**Решение:** `dictate()` — это **не полный ход**, TTS в нём не играет (только
+короткий beep через Silero CPU или winsound). Значит, swap не запускается;
+Whisper остаётся в VRAM на всё время диктовки. TTS-ответ «заметка сохранена»
+идёт отдельным вызовом после записи, по обычному циклу swap.
+
+### Q3. Возврат wake-word после `StopCommand` (M6)
+
+`StopCommand` выключает listener. Нужен симметричный способ включить.
+
+**Решение:** возврат через **иконку трея** (пункт «Включить ассистента»,
+M8) и **горячую клавишу** (`WAKE_HOTKEY = "ctrl+alt+s"` в config, через
+`keyboard` или `pynput`). Голосом — нельзя по определению (микрофон не
+слушается). До M8 (трей) — только hotkey; зафиксировать в `check_stage_m6.py`.
+
+### Q4. Mute для YouTube/Chrome (M5)
+
+`player_manager.get_pid()` для YouTube вернёт один процесс Chrome, pycaw
+заглушит всю аудио-сессию Chrome (все вкладки).
+
+**Решение:** для YouTube-плеера mute работает **через нажатие `m`** в
+активной вкладке (как пауза через пробел в M4), **не через pycaw**.
+`PlayerBase.mute()`/`unmute()` — абстрактный метод, каждая реализация
+делает по-своему: VLC/MPC — pycaw по PID, YouTube — keypress. Отражается
+в `players/base.py` уже в M4 (добавить сигнатуры, заглушки до M5).
+
+### Q5. Транзакционность M7 (скриншот-заметка)
+
+Что делать со скриншотом, если диктовка отменена.
+
+**Решение:** скриншот **удаляется** при отмене. `ScreenshotNoteCommand`
+сохраняет PNG во временный файл (`~/Shura/<session>/.pending_<ts>.png`),
+после успешной диктовки переименовывает в `screenshot_note_<ts>.png` +
+пишет `.txt`. На cancel/timeout — `os.remove(pending)`. Сирот не оставляем.
+
+### Q6. Persistent mute state (M5)
+
+При крэше/убийстве процесса приложения остаются mute навсегда.
+
+**Решение:** `VolumeControl` при каждом mute дописывает PID+время в
+`~/Shura/.muted_pids.json`; при unmute удаляет. На старте `VoicePipeline`
+читает файл и вызывает unmute для всех PID, которые ещё живы (проверка
+через `psutil.pid_exists`). Мёртвые PID просто очищаются из файла.
+`atexit` всё равно регистрируем, но он — best-effort, не источник истины.
+
+### Q7. Serial mode как состояние wake-word (M10)
+
+«Слушаю следующую команду без wake» — это новое состояние машины, не
+надстройка над циклом.
+
+**Решение:** в `WakeWordListener` ввести enum `ListenerState` =
+`{PASSIVE, ACTIVE, SERIAL}`. `PASSIVE` — ждёт кодовое слово; `ACTIVE` — уже
+распознал wake, ждёт фразу команды; `SERIAL` — после выполнения команды, 4с
+окно для следующей без wake. Переходы явные, логируются. Сейчас (Этап 8)
+фактически есть только `PASSIVE` + `ACTIVE`; добавление `SERIAL` — чистое
+расширение, не переписывание.
 
 ---
 
