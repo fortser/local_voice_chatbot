@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import queue
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -37,7 +38,7 @@ from config import (
     PAUSE_THRESHOLD,
 )
 from core.audio_stream import AudioStream
-from utils.errors import AudioError
+from utils.errors import AudioError, CancelledError
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,7 @@ class VoiceActivityDetector:
         max_duration: float = 30.0,
         output_path: str | Path | None = None,
         initial_silence_timeout: float | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> str:
         """Block until a full utterance is captured; write WAV; return path.
 
@@ -184,6 +186,8 @@ class VoiceActivityDetector:
 
         try:
             while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise CancelledError("Recording cancelled by user (Esc)")
                 elapsed = time.monotonic() - t_start
                 if elapsed > max_duration:
                     logger.warning(

@@ -8,6 +8,7 @@ need mixing or queueing for the MVP (TTS output is one-at-a-time).
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
-from utils.errors import AudioError
+from utils.errors import AudioError, CancelledError
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,17 @@ class AudioPlayer:
     def __init__(self, device: int | str | None = None) -> None:
         self._device = device
 
-    def play_file(self, path: str | Path, blocking: bool = True) -> None:
+    def play_file(
+        self,
+        path: str | Path,
+        blocking: bool = True,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         """Play the WAV at ``path``.
 
         Raises:
             AudioError: if the file cannot be opened or playback fails.
+            CancelledError: if ``cancel_event`` is set during playback.
         """
         p = Path(path)
         if not p.is_file():
@@ -47,7 +54,9 @@ class AudioPlayer:
         try:
             sd.play(data, samplerate=sr, device=self._device)
             if blocking:
-                sd.wait()
+                self._wait(cancel_event)
+        except CancelledError:
+            raise
         except Exception as exc:
             raise AudioError(f"Playback failed for {p}: {exc}") from exc
 
@@ -56,6 +65,7 @@ class AudioPlayer:
         samples: np.ndarray,
         sample_rate: int,
         blocking: bool = True,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         """Play a raw ``numpy`` array. Useful for in-memory TTS output."""
         if samples.size == 0:
@@ -64,9 +74,31 @@ class AudioPlayer:
         try:
             sd.play(samples, samplerate=sample_rate, device=self._device)
             if blocking:
-                sd.wait()
+                self._wait(cancel_event)
+        except CancelledError:
+            raise
         except Exception as exc:
             raise AudioError(f"Playback failed: {exc}") from exc
+
+    @staticmethod
+    def _wait(cancel_event: threading.Event | None) -> None:
+        """Block until playback finishes, или cancel_event → sd.stop() + raise."""
+        if cancel_event is None:
+            sd.wait()
+            return
+        # Poll at 50ms — достаточно быстро для UX, достаточно редко,
+        # чтобы не греть CPU. sd.get_stream() возвращает текущий поток.
+        while True:
+            if cancel_event.is_set():
+                sd.stop()
+                raise CancelledError("Playback cancelled by user (Esc)")
+            try:
+                stream = sd.get_stream()
+            except Exception:
+                return
+            if not stream.active:
+                return
+            time.sleep(0.05)
 
     @staticmethod
     def stop() -> None:

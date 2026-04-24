@@ -39,6 +39,11 @@ mss==10.1.0                  # быстрый кросс-платформенн�
 pycaw==20251023              # Windows audio session mute/unmute (per-process)
 comtypes==1.4.16             # COM bindings used by pycaw
 
+# --- Overlay + Tray + Hotkey (M8) ---
+pystray>=0.19,<1          # системный трей (Windows/macOS/Linux)
+Pillow>=10.0              # генерация PNG-иконки для трея
+pynput>=1.7,<2            # глобальная hotkey без прав администратора
+
 # --- Testing ---
 pytest==8.3.3
 pytest-mock==3.14.0

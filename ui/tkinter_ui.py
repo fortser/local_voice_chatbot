@@ -39,7 +39,18 @@ from tkinter import scrolledtext, ttk
 from typing import Any
 
 from bootstrap import bootstrap
-from config import IPC_HOST, IPC_PORT, WAKE_WORD, WAKE_WORD_ENABLED_AT_STARTUP
+from config import (
+    IPC_HOST,
+    IPC_PORT,
+    OVERLAY_ENABLED,
+    TRAY_ENABLED,
+    WAKE_HOTKEY,
+    WAKE_WORD,
+    WAKE_WORD_ENABLED_AT_STARTUP,
+)
+from ui.hotkey import HotkeyListener
+from ui.overlay import Overlay
+from ui.tray import SystemTray, open_folder
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +144,14 @@ class VoiceAIApp:
         self._ipc_server: Any = None
         # Wake-word listener (Stage 8). Created after pipeline.start().
         self._wake_listener: Any = None
+        # Overlay (M8): маленькое окно-статус поверх всех окон. Tk Toplevel,
+        # создаётся сразу (до инициализации pipeline) — чтобы пользователь
+        # видел «Инициализация…» на overlay'е во время загрузки моделей.
+        self._overlay: Overlay | None = None
+        # Tray + hotkey (M8): создаются в _do_init после того, как wake_listener
+        # готов (их колбэки его дёргают).
+        self._tray: SystemTray | None = None
+        self._hotkey: HotkeyListener | None = None
         self._ready = False
         self._stopped = False
         self._shutdown_started = False
@@ -159,6 +178,15 @@ class VoiceAIApp:
 
         self._build_ui()
         self._attach_log_handler()
+
+        # Overlay живёт всё время работы приложения. Если OVERLAY_ENABLED=False
+        # — конструктор no-op, set_state молча игнорится.
+        if OVERLAY_ENABLED:
+            try:
+                self._overlay = Overlay(self._root)
+            except Exception:
+                logger.exception("Overlay init failed — продолжаю без overlay")
+                self._overlay = None
 
         # Worker thread: owns the pipeline, runs all heavy work.
         self._worker = threading.Thread(
@@ -192,6 +220,10 @@ class VoiceAIApp:
         self._root.geometry("780x720")
         self._root.minsize(640, 520)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # M6: Esc — универсальная «стоп-кнопка момента». Прерывает текущую
+        # запись VAD и играющий TTS; Cancel-команды голосом нет (слишком
+        # легко поймать ложное срабатывание на шум).
+        self._root.bind_all("<Escape>", self._on_escape)
 
         # Status bar (top).
         top = ttk.Frame(self._root, padding=(10, 8))
@@ -222,6 +254,10 @@ class VoiceAIApp:
             btns, text="🔄 Перекалибровать", command=self._on_recalibrate, width=20
         )
         self._recal_btn.pack(side="left", padx=4)
+        self._sndvol_btn = ttk.Button(
+            btns, text="🔊 Микшер", command=self._on_open_sndvol, width=12
+        )
+        self._sndvol_btn.pack(side="left", padx=4)
 
         # LLM model selector.
         mdl = ttk.LabelFrame(self._root, text="LLM модель", padding=8)
@@ -366,6 +402,20 @@ class VoiceAIApp:
             return
         self._job_queue.put(("recalibrate", None))
 
+    def _on_open_sndvol(self) -> None:
+        """Открыть Windows Volume Mixer (sndvol.exe) — per-app микшер."""
+        import subprocess
+        try:
+            subprocess.Popen(["sndvol.exe"], close_fds=True)
+        except Exception:
+            logger.exception("не удалось запустить sndvol.exe")
+
+    def _on_escape(self, _event: object = None) -> None:
+        """Esc → прервать текущую запись / воспроизведение."""
+        if not self._ready or self._pipeline is None:
+            return
+        self._pipeline.request_cancel()
+
     def _on_toggle_standby(self) -> None:
         if not self._ready or self._wake_listener is None:
             return
@@ -426,6 +476,11 @@ class VoiceAIApp:
             self._stopped = True
             try:
                 self._detach_log_handler()
+            except Exception:
+                pass
+            try:
+                if self._overlay is not None:
+                    self._overlay.destroy()
             except Exception:
                 pass
             try:
@@ -522,12 +577,76 @@ class VoiceAIApp:
             if WAKE_WORD_ENABLED_AT_STARTUP:
                 listener.enable()
             self._wake_listener = listener
+            # Pipeline нужен листенер, чтобы StopCommand мог его выключить.
+            self._pipeline.set_wake_listener(listener)
         except Exception as exc:
             logger.exception("WakeWordListener init failed")
             self._post("error", f"wake-word: {exc}")
 
+        # Tray + hotkey (M8) — после listener'а, т.к. оба триггерят enable().
+        self._init_tray_and_hotkey()
+
         self._post("state", ("idle", None))
         self._post("ready", None)
+
+    def _init_tray_and_hotkey(self) -> None:
+        """Поднять трей и глобальную hotkey. Ошибки не фатальны."""
+        if TRAY_ENABLED:
+            try:
+                self._tray = SystemTray(
+                    on_enable_assistant=self._tray_enable_assistant,
+                    on_open_session=self._tray_open_session,
+                    on_quit=self._tray_quit,
+                )
+                self._tray.start()
+            except Exception:
+                logger.exception("SystemTray init failed — продолжаю без трея")
+                self._tray = None
+
+        if WAKE_HOTKEY:
+            try:
+                self._hotkey = HotkeyListener(
+                    WAKE_HOTKEY, self._tray_enable_assistant
+                )
+                self._hotkey.start()
+            except Exception:
+                logger.exception("HotkeyListener init failed")
+                self._hotkey = None
+
+    # ---- tray / hotkey callbacks (могут дергаться из чужих потоков) -------
+
+    def _tray_enable_assistant(self) -> None:
+        """Включить wake-word listener. Вызывается из потоков tray/pynput."""
+        listener = self._wake_listener
+        if listener is None:
+            logger.info("tray/hotkey: listener ещё не готов")
+            return
+        # enable()/disable() просто дёргают threading.Event — thread-safe.
+        if not listener.is_enabled:
+            listener.enable()
+            logger.info("tray/hotkey: дежурный режим включён")
+        # Синхронизируем кнопку UI на главном потоке.
+        try:
+            self._root.after(
+                0, lambda: self._standby_btn.configure(text="🛌 Дежурный: вкл")
+            )
+        except (RuntimeError, tk.TclError):
+            pass
+
+    def _tray_open_session(self) -> None:
+        """Открыть папку сессии в Проводнике."""
+        if self._pipeline is None:
+            return
+        sm = self._pipeline.session
+        path = sm.current_dir or sm.base_dir
+        open_folder(path)
+
+    def _tray_quit(self) -> None:
+        """Из трея выбрали «Выход» — делегируем на стандартный shutdown."""
+        try:
+            self._root.after(0, self._on_close)
+        except (RuntimeError, tk.TclError):
+            pass
 
     def _on_wake_event(self, state: str, payload: object) -> None:
         """Callback from WakeWordListener thread. Posts to the UI queue."""
@@ -612,6 +731,18 @@ class VoiceAIApp:
         # worker owns so the UI thread never blocks on GPU cleanup or
         # socket joins. The UI polls for the "stopped" event with a
         # deadline so a hung backend can't keep the window open forever.
+        # Сначала гасим внешние слушатели (tray + hotkey) — чтобы их колбэки
+        # не полезли дёргать уже останавливающийся pipeline.
+        try:
+            if self._hotkey is not None:
+                self._hotkey.stop()
+        except Exception:
+            logger.exception("hotkey stop failed")
+        try:
+            if self._tray is not None:
+                self._tray.stop()
+        except Exception:
+            logger.exception("tray stop failed")
         try:
             if self._wake_listener is not None:
                 self._wake_listener.stop()
@@ -993,6 +1124,24 @@ class VoiceAIApp:
         text = label if not detail else f"{label}: {detail}"
         self._status_text.configure(text=text)
         self._state_name = name
+        # Дублируем состояние в overlay (M8). Overlay сам умеет принимать
+        # короткий вариант лейбла и no-op'ит, если выключен.
+        if self._overlay is not None:
+            self._overlay.set_state(name, detail)
+        # Синхронизация кнопки дежурного режима с реальным состоянием
+        # listener'а: голосовой StopCommand / hotkey / трей могут менять
+        # is_enabled мимо _on_toggle_standby — без этого кнопка врёт.
+        listener = self._wake_listener
+        if listener is not None:
+            btn_text = (
+                "🛌 Дежурный: вкл" if listener.is_enabled
+                else "🛌 Дежурный: выкл"
+            )
+            try:
+                if self._standby_btn.cget("text") != btn_text:
+                    self._standby_btn.configure(text=btn_text)
+            except tk.TclError:
+                pass
 
     def _current_state(self) -> str:
         return getattr(self, "_state_name", "starting")

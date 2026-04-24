@@ -259,6 +259,30 @@ COMMAND_PARSE_FUZZY_THRESHOLD = 0.80
 # LLM-путь (Q&A).
 COMMAND_LLM_FALLBACK = False
 
+# ====== Overlay + Tray + Hotkey (M8) ======
+# Маленькое полупрозрачное окно-статус в углу экрана поверх всех окон.
+# Показывает состояние ассистента (Пассивен / Слышу / Обрабатываю / Отвечаю /
+# Диктуйте), не перехватывает клики (click-through через Win32). Полный UI
+# (tkinter_ui) продолжает существовать отдельным окном.
+OVERLAY_ENABLED = True
+# Угол экрана: "top_right", "top_left", "bottom_right", "bottom_left".
+OVERLAY_POSITION = "top_right"
+OVERLAY_ALPHA = 0.85
+# Отступ от края экрана в пикселях.
+OVERLAY_MARGIN = 16
+
+# Иконка в системном трее. Правый клик — меню: «Включить ассистента»
+# (возврат wake-word после StopCommand), «Открыть папку сессии»,
+# «Перезагрузить конфиг», «Выход».
+TRAY_ENABLED = True
+
+# Глобальная hotkey для включения дежурного режима (wake-word listener).
+# Решение Q3 миграции: когда StopCommand выключил listener, микрофон
+# больше не слушается — голосом не вернёшь. Клавиша работает через
+# pynput (без прав администратора).
+# Формат pynput: "<ctrl>+<alt>+s"; None отключает.
+WAKE_HOTKEY = "<ctrl>+<alt>+s"
+
 # ====== IPC ======
 IPC_HOST = "127.0.0.1"
 IPC_PORT = 9999

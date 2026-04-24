@@ -13,6 +13,10 @@ class AudioError(VoiceAIError):
     """Raised for audio I/O, recording or device issues."""
 
 
+class CancelledError(VoiceAIError):
+    """Raised when a user-initiated cancel (Esc) interrupts recording/playback."""
+
+
 class STTError(VoiceAIError):
     """Raised when speech-to-text fails (model load, transcribe, etc.)."""
 

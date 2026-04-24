@@ -72,7 +72,6 @@ def build_default_registry() -> CommandRegistry:
     from commands.question_command import QuestionCommand
     from commands.screenshot_command import ScreenshotCommand
     from commands.stubs import (
-        CancelCommand,
         SeekBackwardCommand,
         SeekForwardCommand,
         StopCommand,
@@ -81,8 +80,8 @@ def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry(
         [
             # GLOBAL first — semantic priority, not lookup order.
+            # Cancel не голосовой (M6) — Esc в UI: `pipeline.request_cancel()`.
             StopCommand(),
-            CancelCommand(),
             # INSTANT
             PauseCommand(),
             ResumeCommand(),

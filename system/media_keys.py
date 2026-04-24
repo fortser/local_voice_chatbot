@@ -36,7 +36,22 @@ VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 VK_MEDIA_PLAY_PAUSE = 0xB3
 
+KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
+INPUT_KEYBOARD = 1
+
+# Media-keys требуют флаг EXTENDEDKEY — иначе Chromium-браузеры
+# (Яндекс.Браузер, Chrome, Edge) фильтруют синтетические нажатия и
+# YouTube не переключает ролик. Громкость и Play/Pause тоже шлём
+# как extended — это ближе к поведению физической клавиатуры.
+_EXTENDED_VKS = {
+    VK_VOLUME_MUTE,
+    VK_VOLUME_DOWN,
+    VK_VOLUME_UP,
+    VK_MEDIA_NEXT_TRACK,
+    VK_MEDIA_PREV_TRACK,
+    VK_MEDIA_PLAY_PAUSE,
+}
 
 # Сколько раз быстро нажать VK_VOLUME_UP/DOWN на одну команду «громче/тише».
 # Одно нажатие = ~2% мастер-громкости; 5 даёт ощутимый шаг.
@@ -46,10 +61,78 @@ VOLUME_STEP_PRESSES = 5
 INTER_PRESS_DELAY_MS = 30
 
 
+# --- SendInput structures (winuser.h) ---------------------------------------
+
+ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_ulong),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("ki", _KEYBDINPUT),
+        ("mi", _MOUSEINPUT),
+        ("hi", _HARDWAREINPUT),
+    ]
+
+
+class _INPUT(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = [
+        ("type", ctypes.c_ulong),
+        ("u", _INPUT_UNION),
+    ]
+
+
+def _send_key_event(vk: int, key_up: bool) -> None:
+    flags = 0
+    if vk in _EXTENDED_VKS:
+        flags |= KEYEVENTF_EXTENDEDKEY
+    if key_up:
+        flags |= KEYEVENTF_KEYUP
+    inp = _INPUT(type=INPUT_KEYBOARD)
+    inp.ki = _KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=0)
+    sent = ctypes.windll.user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+    if sent != 1:
+        err = ctypes.windll.kernel32.GetLastError()
+        logger.warning("SendInput не прошёл для vk=0x%02X (sent=%d, err=%d)", vk, sent, err)
+
+
 def _press_key(vk: int) -> None:
-    """Эмулировать одно нажатие+отпускание клавиши через keybd_event."""
-    ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
-    ctypes.windll.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+    """Эмулировать одно нажатие+отпускание клавиши через SendInput.
+
+    Для media- и volume-keys автоматически выставляет KEYEVENTF_EXTENDEDKEY —
+    без этого флага Chromium-браузеры игнорируют синтетические нажатия.
+    """
+    _send_key_event(vk, key_up=False)
+    _send_key_event(vk, key_up=True)
 
 
 def play_pause() -> None:

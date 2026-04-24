@@ -39,7 +39,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from bootstrap import bootstrap
 from commands import (
@@ -81,6 +81,7 @@ from system.audio_session_mute import MuteController
 from system.session_manager import SessionManager
 from utils.errors import (
     AudioError,
+    CancelledError,
     LLMError,
     STTError,
     TTSError,
@@ -142,6 +143,12 @@ class VoicePipeline:
         # / wake-word / console mutual exclusion still works because all entry
         # points acquire it from a thread that doesn't already hold it.
         self._lock = threading.RLock()
+        # M6: Escape-клавиша в UI сигналит через этот Event. VAD и AudioPlayer
+        # опрашивают его и вылетают с CancelledError. Listener выставляется
+        # извне через set_wake_listener() — нужен StopCommand, чтобы выключать
+        # дежурный режим голосом.
+        self._cancel_event = threading.Event()
+        self._wake_listener: Any = None
         # Lazy session — created on first save_note / save_screenshot.
         self._session = SessionManager(SESSION_BASE_DIR)
         # Per-session mute (M4): заглушает чужие плееры, не Шурочку.
@@ -201,6 +208,32 @@ class VoicePipeline:
     @property
     def router(self) -> CommandRouter:
         return self._router
+
+    @property
+    def cancel_event(self) -> threading.Event:
+        return self._cancel_event
+
+    @property
+    def wake_listener(self) -> Any:
+        return self._wake_listener
+
+    def set_wake_listener(self, listener: Any) -> None:
+        """UI передаёт сюда созданный WakeWordListener после pipeline.start().
+
+        Нужен StopCommand, чтобы голосом выключать дежурный режим.
+        """
+        self._wake_listener = listener
+
+    def request_cancel(self) -> None:
+        """Сигнал отмены от пользователя (Esc). Прерывает идущую запись и
+        воспроизведение. Идёт в VAD и AudioPlayer через cancel_event.
+        """
+        logger.info("Cancel requested by user (Esc)")
+        self._cancel_event.set()
+        try:
+            self._player.stop()
+        except Exception:
+            logger.debug("player.stop() failed", exc_info=True)
 
     # ---- lifecycle ----
 
@@ -323,6 +356,9 @@ class VoicePipeline:
         wav_in: str | None = None,
     ) -> TurnResult:
         assert self._vad is not None
+        # Сбросить остаточный Esc от предыдущего оборота. Все пути в турн
+        # (console, IPC, wake-word) ведут сюда, так что одна точка сброса.
+        self._cancel_event.clear()
         t_total = time.monotonic()
 
         def _emit(stage: str) -> None:
@@ -337,7 +373,17 @@ class VoicePipeline:
             _emit("listening")
             print("🎤 Слушаю… (автостоп через ~1 сек тишины)")
             try:
-                wav_in = self._vad.record_until_silence()
+                wav_in = self._vad.record_until_silence(
+                    cancel_event=self._cancel_event,
+                )
+            except CancelledError:
+                logger.info("Turn cancelled during recording")
+                print("   ⏹ отменено")
+                return TurnResult(
+                    "", "", None, None,
+                    time.monotonic() - t_total,
+                    error="cancelled",
+                )
             except AudioError as exc:
                 logger.warning("Recording failed: %s", exc)
                 return TurnResult(
@@ -668,7 +714,12 @@ class VoicePipeline:
                     pause_threshold=pause_threshold,
                     max_duration=max_duration,
                     initial_silence_timeout=initial_silence_timeout,
+                    cancel_event=self._cancel_event,
                 )
+            except CancelledError:
+                logger.info("Dictate: отмена пользователем (Esc)")
+                print("   ⏹ диктовка отменена")
+                return ""
             except AudioError as exc:
                 logger.info("Dictate: тишина (%s)", exc)
                 return ""
@@ -747,7 +798,7 @@ class VoicePipeline:
 
         if play:
             print("🔊 Воспроизвожу…")
-            self._player.play_file(wav)
+            self._player.play_file(wav, cancel_event=self._cancel_event)
         return wav, synth_ms
 
     def _speak_safely(self, text: str) -> tuple[str | None, float | None]:
@@ -759,6 +810,9 @@ class VoicePipeline:
         """
         try:
             return self._speak(text)
+        except CancelledError:
+            logger.info("TTS playback cancelled by user (Esc)")
+            print("   ⏹ воспроизведение отменено")
         except TTSError as exc:
             logger.exception("TTS failed")
             print(f"⚠ TTS ошибка: {exc}")
