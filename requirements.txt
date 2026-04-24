@@ -29,6 +29,12 @@ numpy==1.26.4               # pin <2.0 for TTS/whisper compatibility
 librosa==0.10.2.post1
 scipy==1.13.1
 
+# --- Denoise before STT (Этап 9) ---
+# Нейросетевой денойз на CPU перед Whisper. Ключевой выигрыш — для
+# BT-гарнитур через HFP-кодек (нестационарный шум, галлюцинации Whisper).
+# Веса (~10–20 МБ) скачиваются автоматически при первом init_df().
+deepfilternet>=0.5,<0.6
+
 # --- Validation / data ---
 pydantic==2.9.2
 
@@ -43,6 +49,12 @@ comtypes==1.4.16             # COM bindings used by pycaw
 pystray>=0.19,<1          # системный трей (Windows/macOS/Linux)
 Pillow>=10.0              # генерация PNG-иконки для трея
 pynput>=1.7,<2            # глобальная hotkey без прав администратора
+
+# --- Reminders (Этап 10) ---
+# Опционально: альтернативный бэкенд «число → русские слова» для фразы
+# подтверждения напоминания. Переключается `NUM_TO_WORDS_BACKEND` в
+# config.py. Ручной бэкенд (по умолчанию) работает без этой зависимости.
+num2words>=0.5,<0.6
 
 # --- Testing ---
 pytest==8.3.3

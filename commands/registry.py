@@ -70,6 +70,7 @@ def build_default_registry() -> CommandRegistry:
         VolumeUpCommand,
     )
     from commands.question_command import QuestionCommand
+    from commands.reminder_command import ReminderCommand
     from commands.screenshot_command import ScreenshotCommand
     from commands.stubs import (
         SeekBackwardCommand,
@@ -95,6 +96,8 @@ def build_default_registry() -> CommandRegistry:
             # CONTENT
             NoteCommand(),
             QuestionCommand(),
+            # Reminder — INSTANT, но парсит хвост regex'ом внутри execute().
+            ReminderCommand(),
         ]
     )
     logger.info("Command registry built: %d commands", len(registry))

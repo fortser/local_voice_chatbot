@@ -85,3 +85,11 @@ htmlcov/
 
 # System
 python
+
+# Личные заметки и локальные служебные скрипты (не для публичного репо)
+список пожеланий.txt
+новые фичи.txt
+гитхаб.txt
+gitpush.bat
+claude_start.bat
+ЯMake_llm_report.bat

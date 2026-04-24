@@ -62,10 +62,12 @@ from config import (
     UNRECOGNIZED_BEEP_FREQ,
     IPC_HOST,
     IPC_PORT,
+    REMINDERS_FILE,
     SESSION_BASE_DIR,
     SILERO_DEVICE,
     TTS_DEVICE,
     TTS_PROVIDER,
+    USE_DEEPFILTER,
     WAKE_WORD,
     WAKE_WORD_ALIASES,
     WAKE_WORD_BEEP_SAMPLE_RATE,
@@ -76,6 +78,8 @@ from logging_config import UNRECOGNIZED_LOGGER_NAME
 from core.audio_output import AudioPlayer
 from core.audio_stream import AudioStream
 from core.prompt_manager import detect_thinking_markers
+from core.preprocessing import enhance_audio, preload_deepfilter
+from core.reminders import ReminderScheduler, ReminderStorage
 from core.vad import VoiceActivityDetector
 from system.audio_session_mute import MuteController
 from system.session_manager import SessionManager
@@ -167,6 +171,15 @@ class VoicePipeline:
             sample_rate=WAKE_WORD_BEEP_SAMPLE_RATE,
             amplitude=UNRECOGNIZED_BEEP_AMPLITUDE,
         )
+        # Reminder scheduler (Этап 10). Файл с абсолютными fire_at, по таймеру
+        # на каждое напоминание. Callback берёт общий lock — напоминание
+        # подождёт окончания текущего турна. Восстановление активных и
+        # проигрывание просроченных — в start(), когда TTS уже загружен.
+        self._reminder_storage = ReminderStorage(REMINDERS_FILE)
+        self._reminder_scheduler = ReminderScheduler(
+            self._reminder_storage,
+            fire_callback=self._fire_reminder,
+        )
         # Command router (M1). All commands are stubs in this stage; integration
         # path: STT result is offered to the router *before* falling through to
         # the LLM. Wake-word strip-out lives in the router itself so the same
@@ -208,6 +221,10 @@ class VoicePipeline:
     @property
     def router(self) -> CommandRouter:
         return self._router
+
+    @property
+    def reminder_scheduler(self) -> ReminderScheduler:
+        return self._reminder_scheduler
 
     @property
     def cancel_event(self) -> threading.Event:
@@ -280,6 +297,12 @@ class VoicePipeline:
             self._stt.load_model()
             print(f"  готов за {time.monotonic() - t0:.1f}с")
 
+            if USE_DEEPFILTER:
+                print("Загружаю DeepFilterNet (денойз перед STT)…")
+                t0 = time.monotonic()
+                preload_deepfilter()
+                print(f"  готов за {time.monotonic() - t0:.1f}с")
+
             if self._llm.is_healthy():
                 print(f"LLM доступен: {getattr(self._llm, 'model', '?')}")
             else:
@@ -299,6 +322,18 @@ class VoicePipeline:
                     "TTS будет загружаться на каждом обороте "
                     "(GPU-swap со Whisper — TTS_DEVICE=cuda)."
                 )
+
+            # Восстановление напоминаний после загрузки TTS: просроченные
+            # сразу проигрываются, активные получают свои threading.Timer.
+            try:
+                active, overdue = self._reminder_scheduler.load_and_restore()
+                if active or overdue:
+                    print(
+                        f"⏰ Напоминания: активных={active}, "
+                        f"просроченных сыграно={overdue}"
+                    )
+            except Exception:
+                logger.exception("Reminder restore failed")
         except Exception:
             # Any init failure → tear down what we already started.
             self.stop()
@@ -306,6 +341,12 @@ class VoicePipeline:
 
     def stop(self) -> None:
         logger.info("Pipeline stop")
+        # Погасить все активные Timer'ы напоминаний, иначе daemon-потоки
+        # висят до таймаута и в тестах/повторном запуске мешают.
+        try:
+            self._reminder_scheduler.shutdown()
+        except Exception:
+            logger.exception("reminder_scheduler.shutdown failed")
         # Снять mute со всех чужих сессий, что мы заглушили — иначе
         # пользователь останется без звука и будет лезть в системный микшер.
         try:
@@ -349,6 +390,31 @@ class VoicePipeline:
         """
         with self._lock:
             return self._process_voice_input_locked(on_stage, wav_in=wav_in)
+
+    def _preprocess_for_stt(self, wav_in: str) -> str:
+        """Применить DeepFilterNet денойз к WAV перед STT.
+
+        Возвращает путь к очищенному WAV (в logs/denoised/) или исходный
+        ``wav_in`` если ``USE_DEEPFILTER=False`` или денойз упал. Не бросает
+        исключений — любая ошибка логируется и мы падаем в fallback на
+        исходный сигнал, турн не ломаем.
+
+        Применяется только в активных фазах (основной турн, диктовка).
+        В wake-word сканирующем цикле НЕ используется (другой кодовый путь).
+        """
+        if not USE_DEEPFILTER:
+            return wav_in
+        from pathlib import Path
+        from config import LOGS_DIR
+        try:
+            src = Path(wav_in)
+            out_dir = LOGS_DIR / "denoised"
+            out_path = out_dir / f"{src.stem}_clean.wav"
+            enhance_audio(src, out_path)
+            return str(out_path)
+        except Exception as exc:
+            logger.warning("DeepFilterNet denoise skipped: %s", exc)
+            return wav_in
 
     def _process_voice_input_locked(
         self,
@@ -395,9 +461,10 @@ class VoicePipeline:
         # 2. STT
         _emit("processing")
         print("📝 Распознаю…")
+        wav_for_stt = self._preprocess_for_stt(wav_in)
         t_stt = time.monotonic()
         try:
-            user_text = self._stt.transcribe(wav_in).strip()
+            user_text = self._stt.transcribe(wav_for_stt).strip()
         except STTError as exc:
             logger.exception("STT failed")
             return TurnResult(
@@ -484,7 +551,8 @@ class VoicePipeline:
 
         with self._lock:
             t0 = time.monotonic()
-            user_text = self._stt.transcribe(audio_path).strip()
+            wav_for_stt = self._preprocess_for_stt(audio_path)
+            user_text = self._stt.transcribe(wav_for_stt).strip()
             llm_text = ""
             wav_out: str | None = None
             if user_text:
@@ -724,8 +792,9 @@ class VoicePipeline:
                 logger.info("Dictate: тишина (%s)", exc)
                 return ""
 
+            wav_for_stt = self._preprocess_for_stt(wav)
             try:
-                text = self._stt.transcribe(wav).strip()
+                text = self._stt.transcribe(wav_for_stt).strip()
             except STTError as exc:
                 logger.exception("Dictate: STT упал")
                 raise STTError(f"dictate: {exc}") from exc
@@ -765,6 +834,21 @@ class VoicePipeline:
             print(f"   «{answer}»")
             self._speak_safely(answer)
             return answer
+
+    # ---- Reminder callback (Этап 10) ----
+
+    def _fire_reminder(self, text: str) -> None:
+        """Срабатывание напоминания: ждём pipeline-lock, озвучиваем фразу.
+
+        Вызывается из потока ``threading.Timer`` (или из ``load_and_restore``
+        на главном потоке при старте). Блокируется на ``self._lock``, пока
+        идёт активный турн — напоминание встаёт в очередь, не перебивает.
+        """
+        phrase = f"вы хотели {text}"
+        logger.info("Reminder fired: %r", text[:80])
+        with self._lock:
+            print(f"⏰ {phrase}")
+            self._speak_safely(phrase)
 
     # ---- TTS helpers ----
 
