@@ -119,7 +119,7 @@
 # PROJECT REPORTS
 
 # Project: .
-Source: Python: 71 py | 10,830 lines | 437 KB
+Source: Python: 93 py | 14,079 lines | 548 KB
 Language: PYTHON
 
 ## Packages
@@ -129,21 +129,23 @@ core.reminders/ — 6 modules, 0 subpackages
 ipc/ — 4 modules, 0 subpackages
 players/ — 0 modules, 0 subpackages
 system/ — 4 modules, 0 subpackages
-tests/ — 1 modules, 0 subpackages
-ui/ — 4 modules, 0 subpackages
-utils/ — 5 modules, 0 subpackages
+tests/ — 7 modules, 0 subpackages
+ui/ — 4 modules, 1 subpackages
+ui.pyside6/ — 3 modules, 1 subpackages
+ui.pyside6.widgets/ — 4 modules, 0 subpackages
+utils/ — 6 modules, 0 subpackages
 
 ## Key Classes
 VoiceAIApp (ui/tkinter_ui.py)
 VoicePipeline (main.py)
 AudioStream (core/audio_stream.py)
+DashboardWindow : QMainWindow (ui/pyside6/dashboard.py)
+PipelineBridge : QObject (ui/pyside6/bridge.py)
 LMStudioLLM : LLMProvider (core/lmstudio_client.py)
 OllamaLLM : LLMProvider (core/llm.py)
 WakeWordListener (core/wake_word.py)
+_Worker : QThread (ui/pyside6/bridge.py)
 MuteController (system/audio_session_mute.py)
-TestContainsWakeWord (tests/test_wake_word.py)
-Overlay (ui/overlay.py)
-SystemTray (ui/tray.py)
 
 ## Entry Points
 - check_stage_10.py
@@ -152,16 +154,23 @@ SystemTray (ui/tray.py)
 - check_stage_7.py
 - check_stage_8.py
 - check_stage_9.py
+- check_stage_config_refactor.py
+- check_stage_dashboard.py
 - check_stage_m4.py
 - check_stage_m6.py
 - check_stage_m8.py
 - main.py
+- scripts/dump_commands_snapshot.py
+- scripts/dump_config_snapshot.py
+- scripts/screenshot_dashboard.py
 - utils/audio_devices.py
+- utils/bluetooth_battery.py
 - utils/generate_ack_phrases.py
 - utils/tts_speakers.py
 
 ## Dependencies
 - Pillow
+- PySide6
 - comtypes
 - coqui-tts
 - deepfilternet
@@ -174,9 +183,8 @@ SystemTray (ui/tray.py)
 - pyaudio
 - pycaw
 - pydantic
-- pynput
-- pystray
-- ...and 7 more
+- pydantic-settings
+- ...and 11 more
 
 
 ---
@@ -214,6 +222,14 @@ SystemTray (ui/tray.py)
   functions: _banner, _one_pass, main
   imports: __future__, time, pathlib, bootstrap, config
 
+**check_stage_config_refactor.py** (155 lines) [has main]
+  functions: _decode_value, step1_random_constants, step2_toml_override, step3_empty_diff_when_clean, main
+  imports: __future__, random, tempfile, pathlib
+
+**check_stage_dashboard.py** (318 lines) [has main]
+  functions: step1_imports, step2_bridge_methods, step3_bridge_signals, _make_app_and_bridge, step4_dashboard_builds +5
+  imports: __future__, pathlib
+
 **check_stage_m4.py** (137 lines) [has main]
   functions: main
   imports: __future__, logging, time, bootstrap
@@ -226,32 +242,38 @@ SystemTray (ui/tray.py)
   functions: main
   imports: __future__, logging, bootstrap
 
-**config.py** (325 lines)
-  imports: pathlib
+**config.py** (151 lines)
+  imports: __future__, config_model
   imported_by: check_stage_6.py, check_stage_9.py, logging_config.py, main.py, commands/note_command.py
+
+**config_model.py** (396 lines)
+  classes: _Section, PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
+  functions: _deep_merge, load_settings, _diff_dict, _to_toml_primitive, save_settings
+  imports: __future__, pathlib, pydantic, tomllib, tomli
+  imported_by: config.py
 
 **logging_config.py** (76 lines)
   functions: setup_logging
   imports: logging, logging.handlers, config
   imported_by: bootstrap.py, main.py
 
-**main.py** (1044 lines) [has main]
+**main.py** (1101 lines) [has main]
   classes: TurnResult, VoicePipeline
   functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
   imports: __future__, argparse, logging, threading, time
   imported_by: check_stage_5.py, check_stage_6.py, ipc/server.py
 
 ## commands/
-**__init__.py** (28 lines) [package init]
+**__init__.py** (29 lines) [package init]
   imports: commands.base, commands.registry, commands.router
   imported_by: main.py
 
-**base.py** (87 lines)
-  classes: CommandType, CommandContext, BaseCommand
+**base.py** (120 lines)
+  classes: TurnStats, CommandType, CommandContext, BaseCommand
   imports: __future__, abc, dataclasses, enum
   imported_by: commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py, commands/reminder_command.py
 
-**note_command.py** (112 lines)
+**note_command.py** (114 lines)
   classes: NoteCommand
   functions: _extract_tail
   imports: __future__, logging, commands.base, commands.router, config
@@ -261,7 +283,7 @@ SystemTray (ui/tray.py)
   classes: PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand
   imports: __future__, logging, commands.base
 
-**question_command.py** (75 lines)
+**question_command.py** (81 lines)
   classes: QuestionCommand
   imports: __future__, logging, commands.base, commands.note_command, config
 
@@ -269,9 +291,9 @@ SystemTray (ui/tray.py)
   classes: CommandRegistry
   functions: build_default_registry
   imports: __future__, logging, commands.base
-  imported_by: commands/router.py, commands/__init__.py
+  imported_by: commands/router.py, commands/__init__.py, scripts/dump_commands_snapshot.py, tests/test_commands_registry.py
 
-**reminder_command.py** (94 lines)
+**reminder_command.py** (96 lines)
   classes: ReminderCommand
   imports: __future__, logging, commands.base, core.reminders.num_to_words, core.reminders.parser
 
@@ -281,7 +303,7 @@ SystemTray (ui/tray.py)
   imports: __future__, logging, commands.base, commands.registry
   imported_by: commands/note_command.py, commands/__init__.py, core/reminders/parser.py
 
-**screenshot_command.py** (39 lines)
+**screenshot_command.py** (52 lines)
   classes: ScreenshotCommand
   imports: __future__, logging, commands.base
 
@@ -445,6 +467,20 @@ SystemTray (ui/tray.py)
 ## players/
 **__init__.py** (6 lines) [package init]
 
+## scripts/
+**dump_commands_snapshot.py** (51 lines) [has main]
+  functions: main
+  imports: __future__, pathlib, commands.registry
+
+**dump_config_snapshot.py** (78 lines) [has main]
+  functions: _encode, collect_constants, main
+  imports: __future__, pathlib, config
+
+**screenshot_dashboard.py** (108 lines) [has main]
+  classes: _FakeTurn
+  functions: main
+  imports: __future__, dataclasses, pathlib, PySide6.QtGui, PySide6.QtWidgets
+
 ## system/
 **__init__.py** (6 lines) [package init]
   imported_by: commands/player_commands.py, commands/stubs.py
@@ -471,6 +507,30 @@ SystemTray (ui/tray.py)
 
 ## tests/
 **__init__.py** (1 lines) [package init]
+
+**conftest.py** (87 lines)
+  functions: mock_providers, mock_audio
+  imports: __future__, pathlib, unittest.mock, pytest
+
+**test_bluetooth_matcher.py** (58 lines)
+  functions: test_wh1000xm4_matches_when_active_output, test_airpods_pro_matches, test_jbl_speaker_matches, test_bt_keyboard_does_not_match_typical_audio, test_xiaomi_sensor_does_not_match +3
+  imports: __future__, utils.bluetooth_battery
+
+**test_commands_registry.py** (75 lines)
+  functions: _load_snapshot, test_default_registry_matches_snapshot, test_all_synonyms_two_words_or_more, test_registry_rejects_one_word_synonym
+  imports: __future__, pathlib, pytest, commands.registry
+
+**test_config_contract.py** (90 lines)
+  functions: _load_snapshot, _decode_path, _decode_value, test_all_known_constants_present, test_no_unexpected_removals +2
+  imports: __future__, pathlib, pytest, config
+
+**test_config_importers.py** (67 lines)
+  functions: test_smoke_import_all_consumers, test_smoke_import_stage_scripts
+  imports: __future__, importlib, pathlib, pytest
+
+**test_pipeline_smoke.py** (59 lines)
+  functions: pipeline, test_voice_pipeline_init_without_audio, test_start_emits_expected_stages, test_start_stop_cycle
+  imports: __future__, pytest
 
 **test_wake_word.py** (84 lines)
   classes: TestNormalize, TestContainsWakeWord
@@ -500,6 +560,49 @@ SystemTray (ui/tray.py)
   imports: __future__, logging, threading, pathlib
   imported_by: ui/tkinter_ui.py
 
+## ui/pyside6/
+**__init__.py** (6 lines) [package init]
+
+**app.py** (58 lines)
+  functions: _load_qss, run_ui_pyside6
+  imports: __future__, pathlib, PySide6.QtWidgets, bootstrap, config
+  imported_by: scripts/screenshot_dashboard.py
+
+**bridge.py** (445 lines)
+  classes: _Worker, PipelineBridge
+  imports: __future__, logging, queue, threading, PySide6.QtCore
+  imported_by: scripts/screenshot_dashboard.py, ui/pyside6/app.py, ui/pyside6/dashboard.py
+
+**dashboard.py** (470 lines)
+  classes: _HealthDot, DashboardWindow
+  functions: _fmt_ms
+  imports: __future__, logging, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imported_by: scripts/screenshot_dashboard.py, ui/pyside6/app.py
+
+## ui/pyside6/widgets/
+**__init__.py** (2 lines) [package init]
+
+**devices_panel.py** (292 lines)
+  classes: _BtPoller, _BatteryRow, DevicesPanel
+  functions: _format_device
+  imports: __future__, logging, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imported_by: ui/pyside6/dashboard.py
+
+**level_meter.py** (100 lines)
+  classes: LevelMeter
+  imports: __future__, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imported_by: ui/pyside6/dashboard.py
+
+**screenshot_flash.py** (133 lines)
+  classes: ScreenshotFlashOverlay
+  imports: __future__, logging, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imported_by: ui/pyside6/dashboard.py
+
+**status_indicator.py** (73 lines)
+  classes: StatusIndicator
+  imports: __future__, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets, config
+  imported_by: ui/pyside6/dashboard.py
+
 ## utils/
 **__init__.py** (1 lines) [package init]
 
@@ -507,7 +610,13 @@ SystemTray (ui/tray.py)
   classes: DeviceInfo
   functions: list_audio_devices, get_current_devices, _safe, print_devices
   imports: __future__, dataclasses, sounddevice
-  imported_by: bootstrap.py
+  imported_by: bootstrap.py, ui/pyside6/widgets/devices_panel.py
+
+**bluetooth_battery.py** (188 lines) [has main]
+  classes: BluetoothBattery
+  functions: _norm_tokens, bt_matches_audio, get_battery_levels, _cli
+  imports: __future__, logging, subprocess, dataclasses
+  imported_by: tests/test_bluetooth_matcher.py, ui/pyside6/widgets/devices_panel.py
 
 **errors.py** (42 lines)
   classes: VoiceAIError, AudioError, CancelledError, STTError, LLMError, OllamaError, TTSError, IPCError, ConfigError
@@ -543,6 +652,14 @@ methods:
   static def stop() -> None
 """Plays WAV files synchronously via the system default output device."""
 
+## AudioSettings (config_model.py)
+inherits: _Section
+members:
+  sample_rate: int
+  channels: int
+  chunk_size: int
+  sample_width: int
+
 ## AudioStream (core/audio_stream.py)
 methods:
   def __init__(self, on_level_update: ... = None, sample_rate: int = SAMPLE_RATE, channels: int = CHANNELS, chunk_size: int = CHUNK_SIZE, device: ... = None) -> None
@@ -577,6 +694,11 @@ methods:
   def __repr__(self) -> str
 """ABC for every assistant command.  Subclasses set the three class-level attributes and implement :met..."""
 
+## BluetoothBattery [dataclass(frozen=True)] (utils/bluetooth_battery.py)
+members:
+  name: str
+  percent: int
+
 ## BootstrapResult [dataclass(frozen=True)] (bootstrap.py)
 members:
   input_device: ...
@@ -595,6 +717,7 @@ members:
   player_manager: Any
   volume_control: Any
   ui_callback: ...
+  stats: ...
 """Everything a command may need at execution time.  Populated by :class:`VoicePipeline` per dispatch. ..."""
 
 ## CommandRegistry (commands/registry.py)
@@ -615,6 +738,15 @@ methods:
   def dispatch(self, text: str, ctx: CommandContext) -> ...
 """Parse normalised text into a :class:`BaseCommand`, then dispatch."""
 
+## CommandSettings (config_model.py)
+inherits: _Section
+members:
+  fuzzy_threshold: float
+  llm_fallback: bool
+  verbose_ack: bool
+  note_fast_path_min_words: int
+  question_fast_path_min_words: int
+
 ## CommandType (commands/base.py)
 inherits: Enum
 members:
@@ -628,6 +760,36 @@ members:
 inherits: VoiceAIError
 """Raised for misconfiguration (missing models, bad parameters)."""
 
+## DashboardWindow (ui/pyside6/dashboard.py)
+inherits: QMainWindow
+members:
+  WINDOW_WIDTH
+  WINDOW_HEIGHT
+methods:
+  def __init__(self, bridge: PipelineBridge) -> None
+  def _build_left_column(self) -> QVBoxLayout
+  def _on_state_changed(self, name: str, detail: object) -> None
+  def _refresh_level_text(self) -> None
+  def _on_turn_result(self, result: Any) -> None
+  def _on_health(self, snap: dict) -> None
+  def _on_models_list(self, models: object, current: object) -> None
+  def _on_model_applied(self, name: str, elapsed: float, thinking: bool) -> None
+  def _on_model_error(self, msg: str) -> None
+  def _on_ipc_changed(self, ok: object) -> None
+  def _on_screenshot_taken(self, png: object) -> None
+  def _on_ready(self) -> None
+  def _on_fatal(self, msg: str) -> None
+  def _on_apply_model(self) -> None
+  def _on_standby_toggled(self, checked: bool) -> None
+  ...+3 more
+"""Пульт управления 960×640, двухколоночный."""
+
+## DeepFilterSettings (config_model.py)
+inherits: _Section
+members:
+  enabled: bool
+  device: str
+
 ## DeviceInfo [dataclass(frozen=True)] (utils/audio_devices.py)
 members:
   index: int
@@ -635,6 +797,32 @@ members:
   input_channels: int
   output_channels: int
   hostapi: str
+
+## DevicesPanel (ui/pyside6/widgets/devices_panel.py)
+inherits: QGroupBox
+members:
+  AUDIO_POLL_MS
+  BT_POLL_MS
+methods:
+  def __init__(self, parent: ... = None) -> None
+  def _refresh_audio(self) -> None
+  def _on_bt_levels(self, levels: list) -> None
+  def _render_bt_rows(self) -> None
+  def shutdown(self) -> None
+"""Группа: микрофон / выход + список BT-устройств с зарядом."""
+
+## DictateSettings (config_model.py)
+inherits: _Section
+members:
+  pause_threshold: float
+  max_duration: float
+  initial_timeout: float
+  beep_freq: int
+  beep_duration_ms: int
+  beep_amplitude: float
+  unrecognized_beep_freq: int
+  unrecognized_beep_duration_ms: int
+  unrecognized_beep_amplitude: float
 
 ## ErrorBody (ipc/schemas.py)
 inherits: BaseModel
@@ -711,6 +899,12 @@ methods:
   def __init__(self, code: str, message: str) -> None
 """Raised when the server replies with ``status == "error"``."""
 
+## IPCSettings (config_model.py)
+inherits: _Section
+members:
+  host: str
+  port: int
+
 ## LLMError (utils/errors.py)
 inherits: VoiceAIError
 inherited_by: OllamaError
@@ -733,6 +927,20 @@ methods:
   def generate(self, prompt: str) -> str
   def is_healthy(self) -> bool
 """Large language model backend (e.g. Ollama, LM Studio)."""
+
+## LLMSettings (config_model.py)
+inherits: _Section
+members:
+  provider: str
+  system_prompt: str
+  timeout: int
+  max_tokens: int
+  max_tokens_thinking_multiplier: int
+  max_retries: int
+  retry_delay: int
+  thinking_model_patterns: list[str]
+  ollama: OllamaSettings
+  lmstudio: LMStudioSettings
 
 ## LMStudioClient (core/lmstudio_client.py)
 members:
@@ -760,6 +968,33 @@ methods:
   def _maybe_mark_thinking(self, name: ..., raw_text: str) -> None
   def _ensure_model(self) -> str
 """``LLMProvider`` talking to LM Studio; returns TTS-ready text."""
+
+## LMStudioSettings (config_model.py)
+inherits: _Section
+members:
+  base_url: str
+  model: str
+
+## LevelMeter (ui/pyside6/widgets/level_meter.py)
+inherits: QWidget
+methods:
+  def __init__(self, parent: ... = None) -> None
+  def sizeHint(self) -> QSize
+  def set_level(self, rms: float, percent: int) -> None
+  def set_vad(self, noise_rms: float, threshold: float) -> None
+  property def percent(self) -> int
+  property def rms(self) -> float
+  property def noise_rms(self) -> float
+  property def threshold(self) -> float
+  def paintEvent(self, _event) -> None
+"""Горизонтальный bar с маркерами шума и порога."""
+
+## LoggingSettings (config_model.py)
+inherits: _Section
+members:
+  level: str
+  max_bytes: int
+  backup_count: int
 
 ## MuteCommand (commands/player_commands.py)
 inherits: BaseCommand
@@ -825,6 +1060,12 @@ methods:
   def _maybe_mark_thinking(self, name: ..., raw_text: str) -> None
 """``LLMProvider`` that talks to Ollama and returns TTS-ready text."""
 
+## OllamaSettings (config_model.py)
+inherits: _Section
+members:
+  base_url: str
+  model: str
+
 ## Overlay (ui/overlay.py)
 members:
   WIDTH
@@ -841,6 +1082,22 @@ methods:
   def _schedule(self, fn: Callable[(..., None)]) -> None
 """Небольшое always-on-top окно-статус.  Создаётся поверх существующего Tk root; `destroy()` убирает то..."""
 
+## PathsSettings (config_model.py)
+inherits: _Section
+members:
+  base_dir: Path
+  models_dir: Path
+  logs_dir: Path
+  tests_dir: Path
+  log_file: Path
+  unrecognized_log_file: Path
+  ack_dir: Path
+  reminders_file: Path
+  session_base_dir: str
+  tts_output_dir: str
+  ...+1 more
+"""Пути. ``base_dir`` — корень проекта (задаётся программно, не из TOML).  ``session_base_dir`` / ``tts..."""
+
 ## PauseCommand (commands/player_commands.py)
 inherits: BaseCommand
 members:
@@ -850,6 +1107,38 @@ members:
   ack_after
 methods:
   def execute(self, ctx: CommandContext) -> bool
+
+## PipelineBridge (ui/pyside6/bridge.py)
+inherits: QObject
+members:
+  state_changed
+  turn_result
+  health_update
+  level_update
+  models_list
+  model_applied
+  model_error
+  ipc_changed
+  screenshot_taken
+  ready
+  ...+7 more
+methods:
+  def __init__(self, *, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT, parent: ... = None) -> None
+  property def pipeline(self) -> ...
+  property def wake_listener(self) -> ...
+  def start_pipeline(self) -> None
+  def request_turn(self) -> None
+  def request_recalibrate(self) -> None
+  def request_list_models(self) -> None
+  def request_set_model(self, name: str) -> None
+  def request_cancel(self) -> None
+  def request_toggle_standby(self, enable: bool) -> None
+  def shutdown(self) -> None
+  def _set_pipeline(self, pipeline: Any) -> None
+  def _on_ui_event(self, kind: str, payload: object) -> None
+  def _poll_level(self) -> None
+  def attach(self, pipeline: Any) -> None
+"""Qt-фасад над :class:`VoicePipeline`. Создаётся в UI-потоке."""
 
 ## ProtocolError (ipc/protocol.py)
 inherits: Exception
@@ -910,6 +1199,11 @@ methods:
   def remove(self, reminder_id: str) -> None
   static def _is_valid(r: object) -> bool
 
+## RemindersSettings (config_model.py)
+inherits: _Section
+members:
+  num_to_words_backend: str
+
 ## RequestEnvelope (ipc/schemas.py)
 inherits: BaseModel
 members:
@@ -952,6 +1246,14 @@ methods:
   def unload_model(self) -> None
 """Speech-to-text backend (e.g. Whisper, Vosk)."""
 
+## STTSettings (config_model.py)
+inherits: _Section
+members:
+  provider: str
+  whisper_model_size: str
+  whisper_device: str
+  whisper_language: str
+
 ## ScreenshotCommand (commands/screenshot_command.py)
 inherits: BaseCommand
 members:
@@ -961,6 +1263,21 @@ members:
   ack_after
 methods:
   def execute(self, ctx: CommandContext) -> bool
+
+## ScreenshotFlashOverlay (ui/pyside6/widgets/screenshot_flash.py)
+inherits: QWidget
+methods:
+  def __init__(self, png_bytes: bytes, *, hold_ms: int = 500, zoom_ms: int = 400, parent: ... = None) -> None
+  def show_and_animate(self) -> None
+  def _start_zoom(self) -> None
+"""Полноэкранный оверлей: hold → zoom-to-center с fade-out → self-destroy."""
+
+## ScreenshotFlashSettings (config_model.py)
+inherits: _Section
+members:
+  enabled: bool
+  hold_ms: int
+  zoom_ms: int
 
 ## SeekBackwardCommand (commands/stubs.py)
 inherits: BaseCommand
@@ -994,6 +1311,35 @@ methods:
   def _ensure_session_locked(self) -> Path
 """Хранит «текущую сессию» и пишет в неё артефакты команд."""
 
+## Settings (config_model.py)
+inherits: _Section
+members:
+  paths: PathsSettings
+  audio: AudioSettings
+  vad: VADSettings
+  deepfilter: DeepFilterSettings
+  stt: STTSettings
+  llm: LLMSettings
+  tts: TTSSettings
+  wake_word: WakeWordSettings
+  commands: CommandSettings
+  dictate: DictateSettings
+  ...+4 more
+"""Корневая модель: собирает все секции в одном объекте.  Чтение из TOML — через ``load_settings()``; п..."""
+
+## SileroSettings (config_model.py)
+inherits: _Section
+members:
+  device: str
+  model: str
+  speaker: str
+  sample_rate: int
+  put_accent: bool
+  put_yo: bool
+  put_stress_homo: bool
+  put_yo_homo: bool
+  intensity: int
+
 ## SileroTTS (core/silero_tts.py)
 inherits: TTSProvider
 methods:
@@ -1003,6 +1349,14 @@ methods:
   def unload_model(self) -> None
   property def is_loaded(self) -> bool
 """Silero TTS backend (русская модель по умолчанию, CPU-friendly)."""
+
+## StatusIndicator (ui/pyside6/widgets/status_indicator.py)
+inherits: QWidget
+methods:
+  def __init__(self, parent: ... = None) -> None
+  def set_state(self, name: str, detail: object = None) -> None
+  property def state_name(self) -> str
+"""Иконка + жирный текст состояния."""
 
 ## StopCommand (commands/stubs.py)
 inherits: BaseCommand
@@ -1039,6 +1393,14 @@ methods:
   def synthesize(self, text: str) -> str
   def unload_model(self) -> None
 """Text-to-speech backend (e.g. XTTS-v2, MeloTTS)."""
+
+## TTSSettings (config_model.py)
+inherits: _Section
+members:
+  provider: str
+  language: str
+  silero: SileroSettings
+  xtts: XTTSSettings
 
 ## TestContainsWakeWord (tests/test_wake_word.py)
 members:
@@ -1094,6 +1456,30 @@ members:
   llm_prompt_tokens: ...
   ...+1 more
 
+## TurnStats [dataclass] (commands/base.py)
+members:
+  user_text: str
+  llm_text: str
+  wav_out: ...
+  stt_ms: ...
+  llm_ms: ...
+  tts_ms: ...
+  llm_prompt_tokens: ...
+  llm_completion_tokens: ...
+methods:
+  def add_stt_ms(self, ms: float) -> None
+"""Накопитель метрик текущего хода для построения финального ``TurnResult``.  CONTENT-команды делают св..."""
+
+## UISettings (config_model.py)
+inherits: _Section
+members:
+  overlay_enabled: bool
+  overlay_position: str
+  overlay_alpha: float
+  overlay_margin: int
+  tray_enabled: bool
+  screenshot_flash: ScreenshotFlashSettings
+
 ## UnmuteCommand (commands/player_commands.py)
 inherits: BaseCommand
 members:
@@ -1103,6 +1489,17 @@ members:
   ack_after
 methods:
   def execute(self, ctx: CommandContext) -> bool
+
+## VADSettings (config_model.py)
+inherits: _Section
+members:
+  calibration_duration: float
+  calibration_multiplier: float
+  min_energy_threshold: int
+  pause_threshold: float
+  noise_history_size: int
+  dynamic_energy_damping: float
+  dynamic_energy_ratio: float
 
 ## VoiceAIApp (ui/tkinter_ui.py)
 members:
@@ -1178,10 +1575,10 @@ methods:
   property def reminder_scheduler(self) -> ReminderScheduler
   property def cancel_event(self) -> threading.Event
   property def wake_listener(self) -> Any
+  def set_ui_callback(self, cb: ...) -> None
   def set_wake_listener(self, listener: Any) -> None
   def request_cancel(self) -> None
-  def start(self, on_stage: ... = None) -> None
-  ...+18 more
+  ...+19 more
 """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
 
 ## VolumeDownCommand (commands/player_commands.py)
@@ -1218,6 +1615,21 @@ methods:
   def _emit(self, state: str, payload: object = None) -> None
 """Background wake-word listener driving the standby / active cycle."""
 
+## WakeWordSettings (config_model.py)
+inherits: _Section
+members:
+  word: str
+  aliases: list[str]
+  enabled_at_startup: bool
+  scan_window: float
+  active_timeout: float
+  beep_on_freq: int
+  beep_off_freq: int
+  beep_duration_ms: int
+  beep_sample_rate: int
+  beep_amplitude: float
+  ...+1 more
+
 ## WhisperSTT (core/stt.py)
 inherits: STTProvider
 methods:
@@ -1238,10 +1650,63 @@ methods:
   property def is_loaded(self) -> bool
 """Coqui XTTS-v2 backend (multilingual, voice-cloning)."""
 
+## XTTSSettings (config_model.py)
+inherits: _Section
+members:
+  device: str
+  model_name: str
+  speaker_name: str
+
+## _BatteryRow (ui/pyside6/widgets/devices_panel.py)
+inherits: QWidget
+methods:
+  def __init__(self, name: str, percent: int) -> None
+  def set_name(self, name: str) -> None
+  def set_percent(self, percent: int) -> None
+"""Имя устройства + полоска заряда + проценты."""
+
+## _BtPoller (ui/pyside6/widgets/devices_panel.py)
+inherits: QObject
+members:
+  levels_updated
+methods:
+  def __init__(self, interval_ms: int = 60000) -> None
+  def start(self) -> None
+  def stop(self) -> None
+  def _tick(self) -> None
+"""Тянет get_battery_levels() по таймеру в собственном потоке."""
+
+## _FakeTurn [dataclass] (scripts/screenshot_dashboard.py)
+members:
+  user_text: str
+  llm_text: str
+  stt_ms: float
+  llm_ms: float
+  tts_ms: float
+  total_s: float
+  error: object
+  wav_in: object
+  wav_out: object
+  llm_prompt_tokens: object
+  ...+1 more
+
 ## _HARDWAREINPUT (system/media_keys.py)
 inherits: ctypes.Structure
 members:
   _fields_
+
+## _HealthDot (ui/pyside6/dashboard.py)
+inherits: QLabel
+members:
+  _COLORS
+methods:
+  def __init__(self, label: str, parent: ... = None) -> None
+  def _set(self, kind: str) -> None
+  def set_ok(self) -> None
+  def set_warn(self) -> None
+  def set_err(self) -> None
+  def set_off(self) -> None
+"""Кружок-индикатор здоровья сервиса (STT/LLM/TTS) для статус-бара."""
 
 ## _INPUT (system/media_keys.py)
 inherits: ctypes.Structure
@@ -1273,6 +1738,13 @@ methods:
   def _send_error(self, sock: socket.socket, req_id: ..., code: ErrorCode, message: str) -> None
 """One connection, one request, one response. Then close."""
 
+## _Section (config_model.py)
+inherits: BaseModel
+inherited_by: PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
+members:
+  model_config
+"""База для всех секций: запрет лишних полей, чтобы ``settings.toml`` с опечаткой падал на валидации, а..."""
+
 ## _Server (ipc/server.py)
 inherits: socketserver.ThreadingTCPServer
 members:
@@ -1290,6 +1762,21 @@ methods:
   def __init__(self, sink: queue.Queue[tuple[(int, str)]]) -> None
   def emit(self, record: logging.LogRecord) -> None
 """Ship formatted records into a bounded queue for the UI log viewer."""
+
+## _Worker (ui/pyside6/bridge.py)
+inherits: QThread
+methods:
+  def __init__(self, bridge: 'PipelineBridge') -> None
+  def submit(self, job: str, payload: Any = None) -> None
+  def run(self) -> None
+  def _do_init(self, pipeline_cls: type) -> None
+  def _do_turn(self) -> None
+  def _do_recalibrate(self) -> None
+  def _do_list_models(self) -> None
+  def _do_set_model(self, name: str) -> None
+  def _do_health(self) -> None
+  def _do_stop(self) -> None
+"""Поток-владелец :class:`VoicePipeline`. Выполняет init/turn/recalibrate/...  Все сигналы наружу — чер..."""
 
 
 ---
@@ -1336,6 +1823,25 @@ def _banner(title: str) -> None
 def _one_pass(stt: WhisperSTT, vad: VoiceActivityDetector, idx: int) -> bool
 def main() -> int
 
+## check_stage_config_refactor.py
+def _decode_value(encoded)
+def main() -> int
+def step1_random_constants() -> bool
+def step2_toml_override() -> bool
+def step3_empty_diff_when_clean() -> bool
+
+## check_stage_dashboard.py
+def _make_app_and_bridge()
+def main() -> int
+def step1_imports() -> bool
+def step2_bridge_methods() -> bool
+def step3_bridge_signals() -> bool
+def step4_dashboard_builds() -> bool
+def step5_ready_unlocks_buttons() -> bool
+def step6_level_update() -> bool
+def step7_turn_result() -> bool
+def step8_state_change_icon() -> bool
+
 ## check_stage_m4.py
 def main() -> int
 
@@ -1354,6 +1860,13 @@ def build_default_registry() -> CommandRegistry
 ## commands/router.py
 def _strip_wake_word(text: str, wake_words: Iterable[str]) -> str
 def normalize(text: str) -> str
+
+## config_model.py
+def _deep_merge(dst: dict[(str, Any)], src: dict[(str, Any)]) -> dict[(str, Any)]
+def _diff_dict(current: dict[(str, Any)], defaults: dict[(str, Any)]) -> dict[(str, Any)]
+def _to_toml_primitive(value: Any) -> Any
+def load_settings(path: ... = None) -> Settings
+def save_settings(settings: Settings, path: ... = None, *, diff_only: bool = True) -> Path
 
 ## core/__init__.py
 def _make_lmstudio() -> LLMProvider
@@ -1458,6 +1971,17 @@ def main() -> int
 def run_console_mode(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 def run_ipc_mode(*, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
+## scripts/dump_commands_snapshot.py
+def main() -> None
+
+## scripts/dump_config_snapshot.py
+def _encode(value: object) -> object
+def collect_constants() -> dict[(str, dict[(str, object)])]
+def main() -> None
+
+## scripts/screenshot_dashboard.py
+def main() -> int
+
 ## system/media_keys.py
 def _press_key(vk: int) -> None
 def _send_key_event(vk: int, key_up: bool) -> None
@@ -1469,6 +1993,55 @@ def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None
 
 ## system/screenshot.py
 def take_screenshot(monitor: ... = None) -> bytes
+
+## tests/conftest.py
+[pytest.fixture] def mock_audio(mocker)
+[pytest.fixture] def mock_providers(mocker)
+
+## tests/test_bluetooth_matcher.py
+def test_airpods_pro_matches() -> None
+def test_bt_keyboard_does_not_match_typical_audio() -> None
+def test_generic_only_bt_name_returns_false() -> None
+def test_jbl_speaker_matches() -> None
+def test_no_audio_devices_means_no_match() -> None
+def test_realtek_does_not_falsely_match_realtek_audio() -> None
+def test_wh1000xm4_matches_when_active_output() -> None
+def test_xiaomi_sensor_does_not_match() -> None
+
+## tests/test_commands_registry.py
+def _load_snapshot() -> list[dict]
+def test_all_synonyms_two_words_or_more() -> None
+def test_default_registry_matches_snapshot() -> None
+def test_registry_rejects_one_word_synonym() -> None
+
+## tests/test_config_contract.py
+def _decode_path(entry: dict) -> Path
+def _decode_value(encoded: object) -> object
+def _load_snapshot() -> dict[(str, dict[(str, object)])]
+def test_all_known_constants_present() -> None
+[pytest.mark.parametrize("name", sorted(...))] def test_default_values_unchanged(name: str) -> None
+def test_no_unexpected_removals() -> None
+[pytest.mark.parametrize("name", sorted(...))] def test_types_unchanged(name: str) -> None
+
+## tests/test_config_importers.py
+[pytest.mark.parametrize("module_name", CONSUMERS)] def test_smoke_import_all_consumers(module_name: str) -> None
+[pytest.mark.parametrize("module_name", STAGE_SCRIPTS)] def test_smoke_import_stage_scripts(module_name: str) -> None
+
+## tests/test_pipeline_smoke.py
+[pytest.fixture] def pipeline(mock_providers, mock_audio)
+def test_start_emits_expected_stages(pipeline, mock_providers) -> None
+def test_start_stop_cycle(pipeline) -> None
+def test_voice_pipeline_init_without_audio(pipeline, mock_providers) -> None
+
+## ui/pyside6/app.py
+def _load_qss() -> str
+def run_ui_pyside6(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
+
+## ui/pyside6/dashboard.py
+def _fmt_ms(value: ...) -> str
+
+## ui/pyside6/widgets/devices_panel.py
+def _format_device(info: ...) -> str
 
 ## ui/tkinter_ui.py
 def run_ui(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
@@ -1482,6 +2055,12 @@ def _safe(text: str) -> str
 def get_current_devices() -> tuple[(..., ...)]
 def list_audio_devices() -> list[DeviceInfo]
 def print_devices() -> None
+
+## utils/bluetooth_battery.py
+def _cli() -> int
+def _norm_tokens(name: str) -> set[str]
+def bt_matches_audio(bt_name: str, audio_names: list[str]) -> bool
+def get_battery_levels(timeout: float = 20.0) -> list[BluetoothBattery]
 
 ## utils/generate_ack_phrases.py
 def _enumerate_targets() -> list[tuple[(str, str, str)]]
@@ -1501,7 +2080,7 @@ def main() -> int
 
 ## commands/
 """Command subsystem for the Shurochka assistant.  The router parses post-STT text into a :class:`BaseCommand` and dispatches it. If no command matches, """
-__all__ = ['BaseCommand', 'CommandContext', 'CommandType', 'CommandRegistry', 'CommandRouter', 'build_default_registry']
+__all__ = ['BaseCommand', 'CommandContext', 'CommandType', 'TurnStats', 'CommandRegistry', 'CommandRouter', 'build_default_registry']
 modules: base, note_command, player_commands, question_command, registry, reminder_command, router, screenshot_command, stubs
 
 ## core/
@@ -1528,13 +2107,23 @@ modules: client, protocol, schemas, server
 modules: audio_session_mute, media_keys, screenshot, session_manager
 
 ## tests/
-modules: test_wake_word
+modules: conftest, test_bluetooth_matcher, test_commands_registry, test_config_contract, test_config_importers, test_pipeline_smoke, test_wake_word
 
 ## ui/
+subpackages: pyside6
 modules: hotkey, overlay, tkinter_ui, tray
 
+## ui.pyside6/
+"""PySide6-бэкенд UI (в разработке, этапы 3–8 soft-sniffing-allen.md).  Активируется флагом ``python main.py --ui pyside6``. До завершения Этапа 8 живёт """
+subpackages: widgets
+modules: app, bridge, dashboard
+
+## ui.pyside6.widgets/
+"""Кастомные виджеты для PySide6-UI: LevelMeter, StatusIndicator и т.д."""
+modules: devices_panel, level_meter, screenshot_flash, status_indicator
+
 ## utils/
-modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
+modules: audio_devices, bluetooth_battery, errors, generate_ack_phrases, helpers, tts_speakers
 
 
 ---
@@ -1552,9 +2141,10 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 - core/lmstudio_client.py
 - core/ollama_client.py
 - core/preprocessing.py
-- ...and 15 more
+- ...and 16 more
 
 ## Models/Entities
+- config_model.py
 - ipc/schemas.py
 
 ## API/Routes
@@ -1563,17 +2153,26 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 ## Utils/Helpers
 - utils/__init__.py
 - utils/audio_devices.py
+- utils/bluetooth_battery.py
 - utils/errors.py
 - utils/generate_ack_phrases.py
 - utils/helpers.py
 - utils/tts_speakers.py
 
 ## Config
+- check_stage_config_refactor.py
 - config.py
 - logging_config.py
+- scripts/dump_config_snapshot.py
 
 ## Tests
 - tests/__init__.py
+- tests/conftest.py
+- tests/test_bluetooth_matcher.py
+- tests/test_commands_registry.py
+- tests/test_config_contract.py
+- tests/test_config_importers.py
+- tests/test_pipeline_smoke.py
 - tests/test_wake_word.py
 
 ## Other
@@ -1584,7 +2183,7 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 - check_stage_7.py
 - check_stage_8.py
 - check_stage_9.py
+- check_stage_dashboard.py
 - check_stage_m4.py
 - check_stage_m6.py
-- check_stage_m8.py
-- ...and 24 more
+- ...and 35 more
