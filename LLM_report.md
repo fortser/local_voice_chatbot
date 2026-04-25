@@ -119,12 +119,13 @@
 # PROJECT REPORTS
 
 # Project: .
-Source: Python: 62 py | 9,921 lines | 395 KB
+Source: Python: 71 py | 10,830 lines | 437 KB
 Language: PYTHON
 
 ## Packages
-commands/ — 8 modules, 0 subpackages
-core/ — 16 modules, 0 subpackages
+commands/ — 9 modules, 0 subpackages
+core/ — 16 modules, 1 subpackages
+core.reminders/ — 6 modules, 0 subpackages
 ipc/ — 4 modules, 0 subpackages
 players/ — 0 modules, 0 subpackages
 system/ — 4 modules, 0 subpackages
@@ -145,6 +146,7 @@ Overlay (ui/overlay.py)
 SystemTray (ui/tray.py)
 
 ## Entry Points
+- check_stage_10.py
 - check_stage_5.py
 - check_stage_6.py
 - check_stage_7.py
@@ -166,6 +168,7 @@ SystemTray (ui/tray.py)
 - httpx
 - librosa
 - mss
+- num2words
 - numpy
 - openai-whisper
 - pyaudio
@@ -173,8 +176,7 @@ SystemTray (ui/tray.py)
 - pydantic
 - pynput
 - pystray
-- pytest
-- ...and 6 more
+- ...and 7 more
 
 
 ---
@@ -186,7 +188,11 @@ SystemTray (ui/tray.py)
   classes: BootstrapResult
   functions: _force_utf8_stdout, bootstrap
   imports: __future__, dataclasses, logging_config, utils.audio_devices
-  imported_by: check_stage_6.py, check_stage_9.py, check_stage_m4.py, check_stage_m6.py, check_stage_m8.py
+  imported_by: check_stage_10.py, check_stage_6.py, check_stage_9.py, check_stage_m4.py, check_stage_m6.py
+
+**check_stage_10.py** (290 lines) [has main]
+  functions: _banner, _test_parser, _test_num_to_words, _run_pipeline, _test_schedule_now +4
+  imports: __future__, time, pathlib, bootstrap
 
 **check_stage_5.py** (91 lines) [has main]
   functions: main
@@ -220,7 +226,7 @@ SystemTray (ui/tray.py)
   functions: main
   imports: __future__, logging, bootstrap
 
-**config.py** (313 lines)
+**config.py** (325 lines)
   imports: pathlib
   imported_by: check_stage_6.py, check_stage_9.py, logging_config.py, main.py, commands/note_command.py
 
@@ -229,7 +235,7 @@ SystemTray (ui/tray.py)
   imports: logging, logging.handlers, config
   imported_by: bootstrap.py, main.py
 
-**main.py** (996 lines) [has main]
+**main.py** (1044 lines) [has main]
   classes: TurnResult, VoicePipeline
   functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
   imports: __future__, argparse, logging, threading, time
@@ -243,7 +249,7 @@ SystemTray (ui/tray.py)
 **base.py** (87 lines)
   classes: CommandType, CommandContext, BaseCommand
   imports: __future__, abc, dataclasses, enum
-  imported_by: commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py, commands/router.py
+  imported_by: commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py, commands/reminder_command.py
 
 **note_command.py** (112 lines)
   classes: NoteCommand
@@ -259,17 +265,21 @@ SystemTray (ui/tray.py)
   classes: QuestionCommand
   imports: __future__, logging, commands.base, commands.note_command, config
 
-**registry.py** (102 lines)
+**registry.py** (105 lines)
   classes: CommandRegistry
   functions: build_default_registry
   imports: __future__, logging, commands.base
   imported_by: commands/router.py, commands/__init__.py
 
+**reminder_command.py** (94 lines)
+  classes: ReminderCommand
+  imports: __future__, logging, commands.base, core.reminders.num_to_words, core.reminders.parser
+
 **router.py** (147 lines)
   classes: CommandRouter
   functions: normalize, _strip_wake_word
   imports: __future__, logging, commands.base, commands.registry
-  imported_by: commands/note_command.py, commands/__init__.py
+  imported_by: commands/note_command.py, commands/__init__.py, core/reminders/parser.py
 
 **screenshot_command.py** (39 lines)
   classes: ScreenshotCommand
@@ -371,6 +381,40 @@ SystemTray (ui/tray.py)
   imports: __future__, logging, threading, time, config
   imported_by: tests/test_wake_word.py
 
+## core/reminders/
+**__init__.py** (15 lines) [package init]
+  imports: core.reminders.parser, core.reminders.scheduler, core.reminders.storage
+  imported_by: main.py
+
+**num_to_words.py** (35 lines)
+  functions: humanize_duration
+  imports: __future__, logging, config
+  imported_by: commands/reminder_command.py
+
+**num_to_words_external.py** (43 lines)
+  functions: humanize_duration
+  imports: __future__, core.reminders.num_to_words_manual, num2words
+
+**num_to_words_manual.py** (80 lines)
+  functions: _number_to_words, plural_form, humanize_duration
+  imports: __future__
+  imported_by: core/reminders/num_to_words_external.py
+
+**parser.py** (83 lines)
+  functions: parse_reminder_tail, unit_to_seconds
+  imports: __future__, commands.router
+  imported_by: commands/reminder_command.py, core/reminders/__init__.py
+
+**scheduler.py** (125 lines)
+  classes: ReminderScheduler
+  imports: __future__, logging, threading, time, uuid
+  imported_by: core/reminders/__init__.py
+
+**storage.py** (80 lines)
+  classes: ReminderStorage
+  imports: __future__, logging, threading, pathlib
+  imported_by: core/reminders/scheduler.py, core/reminders/__init__.py
+
 ## ipc/
 **__init__.py** (13 lines) [package init]
   imports: ipc.client, ipc.protocol, ipc.server
@@ -467,9 +511,9 @@ SystemTray (ui/tray.py)
 
 **errors.py** (42 lines)
   classes: VoiceAIError, AudioError, CancelledError, STTError, LLMError, OllamaError, TTSError, IPCError, ConfigError
-  imported_by: main.py, commands/note_command.py, commands/question_command.py, core/audio_output.py, core/audio_stream.py
+  imported_by: main.py, commands/note_command.py, commands/question_command.py, commands/reminder_command.py, core/audio_output.py
 
-**generate_ack_phrases.py** (151 lines) [has main]
+**generate_ack_phrases.py** (152 lines) [has main]
   functions: ack_filename, _enumerate_targets, main
   imports: __future__, argparse, logging, shutil, pathlib
 
@@ -521,7 +565,7 @@ methods:
 
 ## BaseCommand (commands/base.py)
 inherits: ABC
-inherited_by: NoteCommand, PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand, QuestionCommand, ScreenshotCommand, StopCommand, SeekForwardCommand, SeekBackwardCommand
+inherited_by: NoteCommand, PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand, QuestionCommand, ReminderCommand, ScreenshotCommand, StopCommand, SeekForwardCommand, SeekBackwardCommand
 members:
   name: str
   synonyms: Sequence[str]
@@ -835,6 +879,37 @@ members:
   threshold: float
   duration: float
 
+## ReminderCommand (commands/reminder_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  ack_before
+  ack_after
+  synonyms
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## ReminderScheduler (core/reminders/scheduler.py)
+methods:
+  def __init__(self, storage: ReminderStorage, fire_callback: FireCallback) -> None
+  def add(self, delay_seconds: int, text: str) -> str
+  def load_and_restore(self) -> tuple[(int, int)]
+  def active_ids(self) -> list[str]
+  def shutdown(self) -> None
+  def _schedule_timer(self, reminder: dict) -> None
+  def _fire(self, reminder: dict) -> None
+
+## ReminderStorage (core/reminders/storage.py)
+methods:
+  def __init__(self, path: ...) -> None
+  property def path(self) -> Path
+  def load_all(self) -> list[dict]
+  def save_all(self, reminders: Iterable[dict]) -> None
+  def add(self, reminder: dict) -> None
+  def remove(self, reminder_id: str) -> None
+  static def _is_valid(r: object) -> bool
+
 ## RequestEnvelope (ipc/schemas.py)
 inherits: BaseModel
 members:
@@ -1100,13 +1175,13 @@ methods:
   property def stt(self)
   property def player(self) -> AudioPlayer
   property def router(self) -> CommandRouter
+  property def reminder_scheduler(self) -> ReminderScheduler
   property def cancel_event(self) -> threading.Event
   property def wake_listener(self) -> Any
   def set_wake_listener(self, listener: Any) -> None
   def request_cancel(self) -> None
   def start(self, on_stage: ... = None) -> None
-  def stop(self) -> None
-  ...+16 more
+  ...+18 more
 """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
 
 ## VolumeDownCommand (commands/player_commands.py)
@@ -1225,6 +1300,17 @@ methods:
 def _force_utf8_stdout() -> None
 def bootstrap(verbose: bool = True) -> BootstrapResult
 
+## check_stage_10.py
+def _banner(title: str) -> None
+def _run_pipeline() -> 'object'
+def _test_interactive_voice(pipeline: 'object') -> None
+def _test_num_to_words() -> None
+def _test_parser() -> None
+def _test_persistence_note(pipeline: 'object') -> None
+def _test_queue_behind_answer(pipeline: 'object') -> None
+def _test_schedule_now(pipeline: 'object', delay_seconds: int = 10) -> None
+def main() -> int
+
 ## check_stage_5.py
 def main() -> int
 
@@ -1309,6 +1395,21 @@ def clean_llm_response(text: str) -> str
 def detect_thinking_markers(text: str) -> bool
 def strip_think_tags(text: str) -> str
 def strip_thinking_chains(text: str) -> str
+
+## core/reminders/num_to_words.py
+def humanize_duration(n: int, unit: str) -> str
+
+## core/reminders/num_to_words_external.py
+def humanize_duration(n: int, unit: str) -> str
+
+## core/reminders/num_to_words_manual.py
+def _number_to_words(n: int) -> str
+def humanize_duration(n: int, unit: str) -> str
+def plural_form(n: int, forms: tuple[(str, str, str)]) -> str
+
+## core/reminders/parser.py
+def parse_reminder_tail(tail: str) -> ...
+def unit_to_seconds(count: int, unit: str) -> int
 
 ## core/silero_tts.py
 def _sanitize_for_silero(text: str) -> str
@@ -1401,12 +1502,18 @@ def main() -> int
 ## commands/
 """Command subsystem for the Shurochka assistant.  The router parses post-STT text into a :class:`BaseCommand` and dispatches it. If no command matches, """
 __all__ = ['BaseCommand', 'CommandContext', 'CommandType', 'CommandRegistry', 'CommandRouter', 'build_default_registry']
-modules: base, note_command, player_commands, question_command, registry, router, screenshot_command, stubs
+modules: base, note_command, player_commands, question_command, registry, reminder_command, router, screenshot_command, stubs
 
 ## core/
 """Provider factories.  Keeps orchestration code (``main.py``, check scripts, IPC) free from concrete imports: ``create_stt_provider('whisper')`` is all """
 __all__ = ['LLMProvider', 'STTProvider', 'TTSProvider', 'create_llm_provider', 'create_stt_provider', 'create_tts_provider']
+subpackages: reminders
 modules: audio_beep, audio_output, audio_stream, base, llm, llm_errors, lmstudio_client, ollama_client, preprocessing, prompt_manager, silero_tts, stt, tts, tts_utils, vad, wake_word
+
+## core.reminders/
+"""Подсистема напоминаний (Этап 10).  * :mod:`parser` — regex-парсер фраз «напомни через N минут …». * :mod:`storage` — JSON-персистентность (абсолютный """
+__all__ = ['parse_reminder_tail', 'ReminderScheduler', 'ReminderStorage']
+modules: num_to_words, num_to_words_external, num_to_words_manual, parser, scheduler, storage
 
 ## ipc/
 """IPC package — exposes server/client entry points for Stage 6.  The wire protocol is a single JSON object per line over TCP (see ``protocol``). Orchest"""
@@ -1445,7 +1552,7 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 - core/lmstudio_client.py
 - core/ollama_client.py
 - core/preprocessing.py
-- ...and 8 more
+- ...and 15 more
 
 ## Models/Entities
 - ipc/schemas.py
@@ -1471,6 +1578,7 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 
 ## Other
 - bootstrap.py
+- check_stage_10.py
 - check_stage_5.py
 - check_stage_6.py
 - check_stage_7.py
@@ -1479,5 +1587,4 @@ modules: audio_devices, errors, generate_ack_phrases, helpers, tts_speakers
 - check_stage_m4.py
 - check_stage_m6.py
 - check_stage_m8.py
-- commands/__init__.py
-- ...and 22 more
+- ...and 24 more

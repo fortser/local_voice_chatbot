@@ -37,6 +37,17 @@ deepfilternet>=0.5,<0.6
 
 # --- Validation / data ---
 pydantic==2.9.2
+pydantic-settings>=2.5,<3
+
+# --- TOML (для settings.toml, см. редизайн UI) ---
+# Python 3.10 не содержит tomllib (добавлен в 3.11), поэтому читаем через tomli.
+# Запись TOML — через tomli-w.
+tomli>=2.0,<3
+tomli-w>=1.0,<2
+
+# --- UI (PySide6, миграция с Tkinter) ---
+# Добавлено в рамках редизайна; старый Tkinter-UI остаётся до этапа 8.
+PySide6>=6.7,<7
 
 # --- Screenshots (M3) ---
 mss==10.1.0                  # быстрый кросс-платформенный grab экрана

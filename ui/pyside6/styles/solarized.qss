@@ -1,0 +1,68 @@
+/* Solarized Light — резервная QSS-тема для PySide6-UI.
+ * Используется, если не установлен/не подгрузился qtvscodestyle.
+ * Палитра: https://ethanschoonover.com/solarized/
+ */
+
+QWidget {
+    background-color: #fdf6e3;  /* base3 */
+    color: #073642;             /* base02 */
+    font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #fdf6e3;
+}
+
+QLabel {
+    color: #073642;
+}
+
+QLabel[role="status"] {
+    color: #586e75;             /* base01 */
+    font-weight: 500;
+}
+
+QPushButton {
+    background-color: #eee8d5;  /* base2 */
+    color: #073642;
+    border: 1px solid #93a1a1;  /* base1 */
+    border-radius: 4px;
+    padding: 6px 14px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: #e4dcc3;
+    border-color: #586e75;
+}
+
+QPushButton:pressed {
+    background-color: #d8cfb0;
+}
+
+QPushButton:disabled {
+    color: #93a1a1;
+    background-color: #eee8d5;
+    border-color: #d8cfb0;
+}
+
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit {
+    background-color: #ffffff;
+    color: #073642;
+    border: 1px solid #93a1a1;
+    border-radius: 3px;
+    padding: 3px 6px;
+    selection-background-color: #b58900;
+    selection-color: #fdf6e3;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus {
+    border-color: #268bd2;      /* blue */
+}
+
+QStatusBar {
+    background-color: #eee8d5;
+    color: #586e75;
+    border-top: 1px solid #93a1a1;
+}

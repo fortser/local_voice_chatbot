@@ -83,6 +83,9 @@ htmlcov/
 .env.local
 .env.*.local
 
+# Пользовательские настройки (генерируются UI Settings; diff-only от дефолтов)
+settings.toml
+
 # System
 python
 

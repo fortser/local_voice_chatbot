@@ -1,0 +1,386 @@
+{
+  "ACK_DIR": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "assets/ack"
+    }
+  },
+  "BASE_DIR": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "."
+    }
+  },
+  "CALIBRATION_DURATION": {
+    "type": "float",
+    "value": 2.0
+  },
+  "CALIBRATION_MULTIPLIER": {
+    "type": "float",
+    "value": 1.8
+  },
+  "CHANNELS": {
+    "type": "int",
+    "value": 1
+  },
+  "CHUNK_SIZE": {
+    "type": "int",
+    "value": 1024
+  },
+  "COMMAND_LLM_FALLBACK": {
+    "type": "bool",
+    "value": false
+  },
+  "COMMAND_PARSE_FUZZY_THRESHOLD": {
+    "type": "float",
+    "value": 0.8
+  },
+  "COMMAND_VERBOSE_ACK": {
+    "type": "bool",
+    "value": true
+  },
+  "DEEPFILTER_DEVICE": {
+    "type": "str",
+    "value": "cuda"
+  },
+  "DICTATE_BEEP_AMPLITUDE": {
+    "type": "float",
+    "value": 0.5
+  },
+  "DICTATE_BEEP_DURATION_MS": {
+    "type": "int",
+    "value": 150
+  },
+  "DICTATE_BEEP_FREQ": {
+    "type": "int",
+    "value": 1200
+  },
+  "DICTATE_INITIAL_TIMEOUT": {
+    "type": "float",
+    "value": 8.0
+  },
+  "DICTATE_MAX_DURATION": {
+    "type": "float",
+    "value": 60.0
+  },
+  "DICTATE_PAUSE_THRESHOLD": {
+    "type": "float",
+    "value": 5.0
+  },
+  "DYNAMIC_ENERGY_DAMPING": {
+    "type": "float",
+    "value": 0.15
+  },
+  "DYNAMIC_ENERGY_RATIO": {
+    "type": "float",
+    "value": 1.5
+  },
+  "IPC_HOST": {
+    "type": "str",
+    "value": "127.0.0.1"
+  },
+  "IPC_PORT": {
+    "type": "int",
+    "value": 9999
+  },
+  "LLM_PROVIDER": {
+    "type": "str",
+    "value": "lmstudio"
+  },
+  "LLM_SYSTEM_PROMPT": {
+    "type": "str",
+    "value": "Ты — Шурочка, голосовой ассистент. О себе говори в женском роде: готова, узнала, рада.\n\nТвои ответы озвучивает русский синтезатор речи. Он понимает только кириллицу и базовую пунктуацию. Латиница, эмодзи, списки, звёздочки, решётки и любая разметка ломают озвучку.\n\nОтвечай только на русском, даже если вопрос задан иначе.\n\nОбращайся к собеседнику на «ты».\n\nИностранные слова и имена передавай кириллицей: Python — Пайтон, Linux — Линукс, GPU — джи-пи-ю, API — эй-пи-ай.\n\nКРИТИЧЕСКИ ВАЖНО: все без исключения цифры, числа, даты, годы, время, температуры, проценты и любые другие числовые значения пиши ТОЛЬКО словами в нужном падеже. Ни одной арабской цифры в ответе быть не должно. Это касается и многозначных чисел, и дат, и диапазонов.\nПримеры правильного написания:\n— «12 апреля 1961 года» → «двенадцатого апреля тысяча девятьсот шестьдесят первого года»\n— «14:30» → «четырнадцать часов тридцать минут»\n— «25°C» → «двадцать пять градусов»\n— «в 2024 году» → «в две тысячи двадцать четвёртом году»\n— «100 метров» → «сто метров»\n— «с 1 по 5 мая» → «с первого по пятое мая»\nПрежде чем выдать ответ, мысленно проверь: нет ли в нём цифр? Если есть — перепиши словами.\n\nОтвечай по существу: одно предложение для простых вопросов, до четырёх — для сложных. Не растягивай ради полноты и не сокращай в ущерб точности.\n\nЕсли точного ответа не знаешь, скажи «не знаю» одним предложением. Не выдумывай факты.\n\nНе начинай ответ с фраз: «Конечно», «Отличный вопрос», «Как ИИ», «Как языковая модель», «Важно отметить», «В заключение», «Надеюсь, это помогло». Не пересказывай вопрос и не пиши мета-комментарии вроде «давай подумаем», «сейчас разберёмся».\n\nТеперь ответь."
+  },
+  "LMSTUDIO_BASE_URL": {
+    "type": "str",
+    "value": "http://localhost:1234"
+  },
+  "LMSTUDIO_MODEL": {
+    "type": "str",
+    "value": "gemma-4-coder"
+  },
+  "LOGS_DIR": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "logs"
+    }
+  },
+  "LOG_BACKUP_COUNT": {
+    "type": "int",
+    "value": 3
+  },
+  "LOG_FILE": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "logs/voice_ai.log"
+    }
+  },
+  "LOG_LEVEL": {
+    "type": "str",
+    "value": "INFO"
+  },
+  "LOG_MAX_BYTES": {
+    "type": "int",
+    "value": 5242880
+  },
+  "MIN_ENERGY_THRESHOLD": {
+    "type": "int",
+    "value": 150
+  },
+  "MODELS_DIR": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "models"
+    }
+  },
+  "NOISE_HISTORY_SIZE": {
+    "type": "int",
+    "value": 100
+  },
+  "NOTE_FAST_PATH_MIN_WORDS": {
+    "type": "int",
+    "value": 3
+  },
+  "NUM_TO_WORDS_BACKEND": {
+    "type": "str",
+    "value": "manual"
+  },
+  "OLLAMA_BASE_URL": {
+    "type": "str",
+    "value": "http://localhost:11434"
+  },
+  "OLLAMA_MAX_RETRIES": {
+    "type": "int",
+    "value": 2
+  },
+  "OLLAMA_MAX_TOKENS": {
+    "type": "int",
+    "value": 300
+  },
+  "OLLAMA_MAX_TOKENS_THINKING_MULTIPLIER": {
+    "type": "int",
+    "value": 3
+  },
+  "OLLAMA_MODEL": {
+    "type": "str",
+    "value": "gemma-4-coder"
+  },
+  "OLLAMA_RETRY_DELAY": {
+    "type": "int",
+    "value": 5
+  },
+  "OLLAMA_TIMEOUT": {
+    "type": "int",
+    "value": 120
+  },
+  "OVERLAY_ALPHA": {
+    "type": "float",
+    "value": 0.85
+  },
+  "OVERLAY_ENABLED": {
+    "type": "bool",
+    "value": true
+  },
+  "OVERLAY_MARGIN": {
+    "type": "int",
+    "value": 16
+  },
+  "OVERLAY_POSITION": {
+    "type": "str",
+    "value": "top_right"
+  },
+  "PAUSE_THRESHOLD": {
+    "type": "float",
+    "value": 1.0
+  },
+  "QUESTION_FAST_PATH_MIN_WORDS": {
+    "type": "int",
+    "value": 2
+  },
+  "REMINDERS_FILE": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "logs/reminders.json"
+    }
+  },
+  "SAMPLE_RATE": {
+    "type": "int",
+    "value": 16000
+  },
+  "SAMPLE_WIDTH": {
+    "type": "int",
+    "value": 2
+  },
+  "SESSION_BASE_DIR": {
+    "type": "str",
+    "value": "~/Shura"
+  },
+  "SILERO_DEVICE": {
+    "type": "str",
+    "value": "cpu"
+  },
+  "SILERO_INTENSITY": {
+    "type": "int",
+    "value": 3
+  },
+  "SILERO_MODEL": {
+    "type": "str",
+    "value": "v5_4_ru"
+  },
+  "SILERO_PUT_ACCENT": {
+    "type": "bool",
+    "value": true
+  },
+  "SILERO_PUT_STRESS_HOMO": {
+    "type": "bool",
+    "value": true
+  },
+  "SILERO_PUT_YO": {
+    "type": "bool",
+    "value": true
+  },
+  "SILERO_PUT_YO_HOMO": {
+    "type": "bool",
+    "value": true
+  },
+  "SILERO_SAMPLE_RATE": {
+    "type": "int",
+    "value": 48000
+  },
+  "SILERO_SPEAKER": {
+    "type": "str",
+    "value": "xenia"
+  },
+  "STT_PROVIDER": {
+    "type": "str",
+    "value": "whisper"
+  },
+  "TESTS_DIR": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "tests"
+    }
+  },
+  "THINKING_MODEL_PATTERNS": {
+    "type": "list",
+    "value": [
+      "thinking",
+      "think",
+      "r1",
+      "reasoning",
+      "qwq"
+    ]
+  },
+  "TRAY_ENABLED": {
+    "type": "bool",
+    "value": true
+  },
+  "TTS_DEVICE": {
+    "type": "str",
+    "value": "cuda"
+  },
+  "TTS_LANGUAGE": {
+    "type": "str",
+    "value": "ru"
+  },
+  "TTS_MODEL_NAME": {
+    "type": "str",
+    "value": "tts_models/multilingual/multi-dataset/xtts_v2"
+  },
+  "TTS_OUTPUT_DIR": {
+    "type": "str",
+    "value": "logs/tts_out"
+  },
+  "TTS_PROVIDER": {
+    "type": "str",
+    "value": "silero"
+  },
+  "TTS_SPEAKER_NAME": {
+    "type": "str",
+    "value": "Claribel Dervla"
+  },
+  "TTS_SPEAKER_WAV": {
+    "type": "str",
+    "value": "tests/fixtures/sample.wav"
+  },
+  "UNRECOGNIZED_BEEP_AMPLITUDE": {
+    "type": "float",
+    "value": 0.5
+  },
+  "UNRECOGNIZED_BEEP_DURATION_MS": {
+    "type": "int",
+    "value": 180
+  },
+  "UNRECOGNIZED_BEEP_FREQ": {
+    "type": "int",
+    "value": 350
+  },
+  "UNRECOGNIZED_LOG_FILE": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "logs/unrecognized.log"
+    }
+  },
+  "USE_DEEPFILTER": {
+    "type": "bool",
+    "value": false
+  },
+  "WAKE_HOTKEY": {
+    "type": "str",
+    "value": "<ctrl>+<alt>+s"
+  },
+  "WAKE_WORD": {
+    "type": "str",
+    "value": "шурочка"
+  },
+  "WAKE_WORD_ACTIVE_TIMEOUT": {
+    "type": "float",
+    "value": 8.0
+  },
+  "WAKE_WORD_ALIASES": {
+    "type": "list",
+    "value": [
+      "шура"
+    ]
+  },
+  "WAKE_WORD_BEEP_AMPLITUDE": {
+    "type": "float",
+    "value": 0.6
+  },
+  "WAKE_WORD_BEEP_DURATION_MS": {
+    "type": "int",
+    "value": 250
+  },
+  "WAKE_WORD_BEEP_OFF_FREQ": {
+    "type": "int",
+    "value": 440
+  },
+  "WAKE_WORD_BEEP_ON_FREQ": {
+    "type": "int",
+    "value": 880
+  },
+  "WAKE_WORD_BEEP_SAMPLE_RATE": {
+    "type": "int",
+    "value": 24000
+  },
+  "WAKE_WORD_ENABLED_AT_STARTUP": {
+    "type": "bool",
+    "value": false
+  },
+  "WAKE_WORD_SCAN_WINDOW": {
+    "type": "float",
+    "value": 4.0
+  },
+  "WHISPER_DEVICE": {
+    "type": "str",
+    "value": "cuda"
+  },
+  "WHISPER_LANGUAGE": {
+    "type": "str",
+    "value": "russian"
+  },
+  "WHISPER_MODEL_SIZE": {
+    "type": "str",
+    "value": "large-v3-turbo"
+  }
+}

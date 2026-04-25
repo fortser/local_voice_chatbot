@@ -1,0 +1,81 @@
+# Пример файла пользовательских настроек.
+#
+# Скопируйте в `settings.toml` и раскомментируйте только те поля, которые
+# хотите изменить относительно дефолтов (они зашиты в config_model.py).
+# `settings.toml` не коммитится (см. .gitignore) — ваши правки остаются
+# локальными. Окно Settings в UI (Этап 5) пишет сюда то же самое
+# автоматически, но только «diff» от дефолтов — пустой файл = всё по
+# дефолту.
+#
+# Формат: TOML. Секции совпадают с нижним регистром из
+# docs/config_migration_map.md (paths, audio, vad, deepfilter, stt, llm,
+# llm.ollama, llm.lmstudio, tts, tts.silero, tts.xtts, wake_word,
+# commands, dictate, ui, reminders, ipc, logging).
+
+# --- STT / Whisper ------------------------------------------------------------
+# [stt]
+# whisper_model_size = "large-v3-turbo"   # или "large-v3" для максимального качества
+# whisper_device = "cuda"                 # "cpu" если нет CUDA
+# whisper_language = "russian"
+
+# --- LLM ----------------------------------------------------------------------
+# [llm]
+# provider = "lmstudio"                    # или "ollama"
+# timeout = 120
+# max_tokens = 300
+
+# [llm.ollama]
+# base_url = "http://localhost:11434"
+# model = "gemma-4-coder"
+
+# [llm.lmstudio]
+# base_url = "http://localhost:1234"
+# model = ""                              # пусто = автовыбор единственной загруженной модели
+
+# --- TTS ----------------------------------------------------------------------
+# [tts]
+# provider = "silero"                      # или "xtts"
+# language = "ru"
+
+# [tts.silero]
+# speaker = "xenia"                        # xenia / baya / kseniya / aidar / eugene
+# sample_rate = 48000                      # 8000 / 24000 / 48000
+# intensity = 3                            # 1..5 — сила вопросительной интонации (v5)
+
+# [tts.xtts]
+# device = "cuda"
+# speaker_name = "Claribel Dervla"
+
+# --- Wake-word ----------------------------------------------------------------
+# [wake_word]
+# word = "шурочка"
+# aliases = ["шура"]
+# enabled_at_startup = false
+# hotkey = "<ctrl>+<alt>+s"                # pynput-формат; пустая строка = выключить
+
+# --- VAD / калибровка ---------------------------------------------------------
+# [vad]
+# min_energy_threshold = 150
+# pause_threshold = 1.0
+# calibration_duration = 2.0
+
+# --- DeepFilterNet ------------------------------------------------------------
+# [deepfilter]
+# enabled = false                          # включать после приёмки check_stage_9.py
+# device = "cuda"                          # "cpu" если XTTS занимает CUDA
+
+# --- UI / overlay / tray ------------------------------------------------------
+# [ui]
+# overlay_enabled = true
+# overlay_position = "top_right"           # top_right / top_left / bottom_right / bottom_left
+# overlay_alpha = 0.85
+# tray_enabled = true
+
+# --- IPC ----------------------------------------------------------------------
+# [ipc]
+# host = "127.0.0.1"
+# port = 9999
+
+# --- Logging ------------------------------------------------------------------
+# [logging]
+# level = "INFO"                           # DEBUG / INFO / WARNING / ERROR

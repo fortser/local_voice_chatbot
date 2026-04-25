@@ -1009,9 +1009,19 @@ def main() -> int:
         choices=["ui", "console", "ipc"],
         default="ui",
         help=(
-            "ui = Tkinter GUI with diagnostics (default); "
+            "ui = GUI with diagnostics (default); "
             "console = interactive REPL + IPC server on background thread; "
             "ipc = headless, IPC server only."
+        ),
+    )
+    parser.add_argument(
+        "--ui",
+        choices=["tkinter", "pyside6"],
+        default="tkinter",
+        help=(
+            "UI backend (только для --mode ui). "
+            "tkinter = старый монолит (default, пока идёт редизайн); "
+            "pyside6 = новый Dashboard (в разработке, этапы 3–8 soft-sniffing-allen.md)."
         ),
     )
     parser.add_argument(
@@ -1024,6 +1034,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.mode == "ui":
+        if args.ui == "pyside6":
+            from ui.pyside6.app import run_ui_pyside6
+            return run_ui_pyside6(
+                with_ipc=not args.no_ipc, ipc_host=args.host, ipc_port=args.port
+            )
         # Lazy import so console/IPC modes don't drag in Tkinter dependencies.
         from ui.tkinter_ui import run_ui
         return run_ui(
