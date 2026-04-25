@@ -37,8 +37,8 @@ if %errorlevel% neq 0 (
 echo OK - Коммит создан
 echo.
 
-echo [3/3] git push
-git push
+echo [3/3] git push -u origin HEAD
+git push -u origin HEAD
 if %errorlevel% neq 0 (
     echo ОШИБКА на этапе git push!
     pause
