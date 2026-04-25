@@ -13,7 +13,7 @@ Public surface:
 * :class:`commands.router.CommandRouter` — text → command dispatch.
 """
 
-from commands.base import BaseCommand, CommandContext, CommandType
+from commands.base import BaseCommand, CommandContext, CommandType, TurnStats
 from commands.registry import CommandRegistry, build_default_registry
 from commands.router import CommandRouter
 
@@ -21,6 +21,7 @@ __all__ = [
     "BaseCommand",
     "CommandContext",
     "CommandType",
+    "TurnStats",
     "CommandRegistry",
     "CommandRouter",
     "build_default_registry",

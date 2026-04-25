@@ -33,9 +33,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from config import (
+    SCREENSHOT_FLASH_ENABLED,
+    SCREENSHOT_FLASH_HOLD_MS,
+    SCREENSHOT_FLASH_ZOOM_MS,
+)
+
 from .bridge import PipelineBridge
 from .widgets.devices_panel import DevicesPanel
 from .widgets.level_meter import LevelMeter
+from .widgets.screenshot_flash import ScreenshotFlashOverlay
 from .widgets.status_indicator import StatusIndicator
 
 logger = logging.getLogger(__name__)
@@ -121,6 +128,7 @@ class DashboardWindow(QMainWindow):
         bridge.model_applied.connect(self._on_model_applied)
         bridge.model_error.connect(self._on_model_error)
         bridge.ipc_changed.connect(self._on_ipc_changed)
+        bridge.screenshot_taken.connect(self._on_screenshot_taken)
         bridge.ready.connect(self._on_ready)
         bridge.fatal.connect(self._on_fatal)
         bridge.error_message.connect(
@@ -128,6 +136,10 @@ class DashboardWindow(QMainWindow):
         )
 
         self._set_action_buttons_enabled(False)
+
+        # Активные flash-оверлеи: top-level QWidget'ы без Qt-родителя — без
+        # этой ссылки Python GC съедает обёртку до появления окна.
+        self._flash_overlays: list[Any] = []
 
     # ---- layout helpers ---------------------------------------------------
 
@@ -366,6 +378,33 @@ class DashboardWindow(QMainWindow):
             self._status_msg.setText("IPC: активен")
         elif ok is False:
             self._status_msg.setText("IPC: не стартовал (порт занят?)")
+
+    @Slot(object)
+    def _on_screenshot_taken(self, png: object) -> None:
+        logger.info(
+            "Dashboard: screenshot_taken received (enabled=%s, %d bytes)",
+            SCREENSHOT_FLASH_ENABLED,
+            len(png) if isinstance(png, (bytes, bytearray)) else -1,
+        )
+        if not SCREENSHOT_FLASH_ENABLED:
+            return
+        if not isinstance(png, (bytes, bytearray)) or not png:
+            logger.warning("Dashboard: screenshot_taken with invalid payload")
+            return
+        try:
+            overlay = ScreenshotFlashOverlay(
+                bytes(png),
+                hold_ms=SCREENSHOT_FLASH_HOLD_MS,
+                zoom_ms=SCREENSHOT_FLASH_ZOOM_MS,
+            )
+            self._flash_overlays.append(overlay)
+            overlay.destroyed.connect(
+                lambda _=None, ref=overlay: self._flash_overlays.remove(ref)
+                if ref in self._flash_overlays else None
+            )
+            overlay.show_and_animate()
+        except Exception:
+            logger.exception("ScreenshotFlashOverlay failed")
 
     @Slot()
     def _on_ready(self) -> None:

@@ -16,6 +16,34 @@ from enum import Enum
 from typing import Any, Callable, Sequence
 
 
+@dataclass
+class TurnStats:
+    """Накопитель метрик текущего хода для построения финального ``TurnResult``.
+
+    CONTENT-команды делают свои собственные STT/LLM/TTS внутри ``execute()``
+    (dictate второй раз, answer_question и т.п.), но эти результаты иначе
+    терялись бы для UI: ``_process_voice_input_locked`` видит только
+    исходную фразу-триггер. Команды пишут в этот объект через
+    ``pipeline.dictate(stats=...)`` / ``pipeline.answer_question(stats=...)``,
+    а pipeline собирает финальный ``TurnResult`` из накопленного.
+
+    ``stt_ms`` суммируется по всем STT-проходам за ход (триггер + диктовка),
+    ``llm_ms``/``tts_ms`` — однократные.
+    """
+
+    user_text: str = ""
+    llm_text: str = ""
+    wav_out: str | None = None
+    stt_ms: float | None = None
+    llm_ms: float | None = None
+    tts_ms: float | None = None
+    llm_prompt_tokens: int | None = None
+    llm_completion_tokens: int | None = None
+
+    def add_stt_ms(self, ms: float) -> None:
+        self.stt_ms = (self.stt_ms or 0.0) + ms
+
+
 class CommandType(Enum):
     """Coarse classification used by the router and standby state machine.
 
@@ -52,6 +80,11 @@ class CommandContext:
     player_manager: Any = None   # M4
     volume_control: Any = None   # M5
     ui_callback: Callable[[str, object], None] | None = None
+    # Накопитель метрик хода. Заполняется ``VoicePipeline`` перед dispatch'ем;
+    # CONTENT-команды передают его в ``pipeline.dictate(stats=...)`` /
+    # ``pipeline.answer_question(stats=...)``, чтобы UI получил полные тайминги
+    # и текст ответа, а не только трим-фразу-триггер.
+    stats: TurnStats | None = None
 
 
 class BaseCommand(ABC):

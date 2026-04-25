@@ -53,7 +53,9 @@ class QuestionCommand(BaseCommand):
             )
         else:
             try:
-                question = pipeline.dictate(ack_filename=self.ack_before)
+                question = pipeline.dictate(
+                    ack_filename=self.ack_before, stats=ctx.stats
+                )
             except STTError:
                 logger.exception("QuestionCommand: STT упал во время диктовки")
                 print("⚠ Вопрос не распознан.")
@@ -65,8 +67,12 @@ class QuestionCommand(BaseCommand):
                 return True
 
         print(f"❓ «{question}»")
+        # Если был fast-path (диктовка не вызывалась) — заполнить user_text
+        # вручную, чтобы UI показал именно вопрос, а не фразу-триггер.
+        if ctx.stats is not None and question:
+            ctx.stats.user_text = question
         try:
-            pipeline.answer_question(question)
+            pipeline.answer_question(question, stats=ctx.stats)
         except LLMError:
             # answer_question уже озвучил FALLBACK_LLM_ERROR; здесь просто
             # помечаем, что команда «обработала» вход (в LLM повторно не идём).

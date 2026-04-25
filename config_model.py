@@ -227,12 +227,19 @@ class DictateSettings(_Section):
     unrecognized_beep_amplitude: float = 0.5
 
 
+class ScreenshotFlashSettings(_Section):
+    enabled: bool = True
+    hold_ms: int = 500
+    zoom_ms: int = 400
+
+
 class UISettings(_Section):
     overlay_enabled: bool = True
     overlay_position: str = "top_right"
     overlay_alpha: float = 0.85
     overlay_margin: int = 16
     tray_enabled: bool = True
+    screenshot_flash: ScreenshotFlashSettings = Field(default_factory=ScreenshotFlashSettings)
 
 
 class RemindersSettings(_Section):
@@ -377,6 +384,7 @@ __all__ = [
     "WakeWordSettings",
     "CommandSettings",
     "DictateSettings",
+    "ScreenshotFlashSettings",
     "UISettings",
     "RemindersSettings",
     "IPCSettings",

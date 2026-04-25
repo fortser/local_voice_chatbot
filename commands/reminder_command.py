@@ -56,7 +56,9 @@ class ReminderCommand(BaseCommand):
         # Диктуем тело. pipeline.dictate() сам проигрывает ack_before
         # (если файл есть) или fallback-бип, и ждёт речь.
         try:
-            body = pipeline.dictate(ack_filename=self.ack_before)
+            body = pipeline.dictate(
+                ack_filename=self.ack_before, stats=ctx.stats
+            )
         except STTError:
             logger.exception("ReminderCommand: STT упал во время диктовки")
             print("⚠ Тело напоминания не распознано.")

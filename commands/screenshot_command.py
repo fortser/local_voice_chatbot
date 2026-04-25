@@ -33,6 +33,19 @@ class ScreenshotCommand(BaseCommand):
             logger.warning("ScreenshotCommand: SessionManager не передан")
             return False
         png = take_screenshot()
+        # UI-визуализация запускается ДО save_screenshot, чтобы flash-кадр
+        # появился раньше, а save_screenshot (запись на диск) шёл параллельно
+        # с Qt-анимацией в UI-потоке.
+        logger.info(
+            "ScreenshotCommand: ui_callback=%s, png=%d bytes",
+            "set" if ctx.ui_callback is not None else "None",
+            len(png),
+        )
+        if ctx.ui_callback is not None:
+            try:
+                ctx.ui_callback("screenshot_taken", {"png": png})
+            except Exception:
+                logger.exception("ScreenshotCommand: ui_callback raised")
         path = session.save_screenshot(png)
         print(f"📸 Скриншот сохранён: {path}")
         return True

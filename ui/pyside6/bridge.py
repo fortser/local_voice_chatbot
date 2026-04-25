@@ -106,6 +106,10 @@ class _Worker(QThread):
 
         bridge._set_pipeline(pipeline)
 
+        # UI-callback для команд: pipeline дёргает его из worker-потока,
+        # bridge переадресовывает в Qt-сигнал (auto-marshal в UI-поток).
+        pipeline.set_ui_callback(bridge._on_ui_event)
+
         # IPC server (как в Tkinter — best-effort, не валит UI).
         if bridge._with_ipc:
             try:
@@ -265,6 +269,7 @@ class PipelineBridge(QObject):
     model_applied = Signal(str, float, bool)    # (name, elapsed_s, thinking)
     model_error = Signal(str)
     ipc_changed = Signal(object)                # bool|None
+    screenshot_taken = Signal(object)           # PNG-байты (Signal(object) для безопасной кросс-потоковой доставки)
     ready = Signal()
     fatal = Signal(str)
     stopped = Signal()
@@ -392,6 +397,27 @@ class PipelineBridge(QObject):
         # Таймеры стартуют как только есть pipeline — VAD/level уже работают.
         self._level_timer.start()
         self._health_timer.start()
+
+    def _on_ui_event(self, kind: str, payload: object) -> None:
+        """Принимает события от команд (вызывается из worker-потока).
+        Маршрутизирует в Qt-сигналы — Qt сам переключит на UI-поток."""
+        logger.info("PipelineBridge._on_ui_event: kind=%r", kind)
+        try:
+            if kind == "screenshot_taken":
+                png = payload.get("png") if isinstance(payload, dict) else None
+                if isinstance(png, (bytes, bytearray)):
+                    logger.info(
+                        "PipelineBridge: emitting screenshot_taken (%d bytes)",
+                        len(png),
+                    )
+                    self.screenshot_taken.emit(bytes(png))
+                else:
+                    logger.warning(
+                        "PipelineBridge: screenshot_taken without png bytes (%r)",
+                        type(png).__name__,
+                    )
+        except Exception:
+            logger.exception("PipelineBridge._on_ui_event(%r) failed", kind)
 
     def _poll_level(self) -> None:
         pipeline = self._pipeline

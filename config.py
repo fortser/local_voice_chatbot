@@ -133,6 +133,9 @@ OVERLAY_POSITION = settings.ui.overlay_position
 OVERLAY_ALPHA = settings.ui.overlay_alpha
 OVERLAY_MARGIN = settings.ui.overlay_margin
 TRAY_ENABLED = settings.ui.tray_enabled
+SCREENSHOT_FLASH_ENABLED = settings.ui.screenshot_flash.enabled
+SCREENSHOT_FLASH_HOLD_MS = settings.ui.screenshot_flash.hold_ms
+SCREENSHOT_FLASH_ZOOM_MS = settings.ui.screenshot_flash.zoom_ms
 
 # ====== Напоминания ======
 NUM_TO_WORDS_BACKEND = settings.reminders.num_to_words_backend

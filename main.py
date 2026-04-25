@@ -45,6 +45,7 @@ from bootstrap import bootstrap
 from commands import (
     CommandContext,
     CommandRouter,
+    TurnStats,
     build_default_registry,
 )
 from config import (
@@ -153,6 +154,9 @@ class VoicePipeline:
         # дежурный режим голосом.
         self._cancel_event = threading.Event()
         self._wake_listener: Any = None
+        # UI-callback (выставляется PySide6 bridge'ем): команды могут эмитить
+        # визуальные события, не зная о Qt. Сигнатура: (kind: str, payload: dict).
+        self._ui_callback: Callable[[str, object], None] | None = None
         # Lazy session — created on first save_note / save_screenshot.
         self._session = SessionManager(SESSION_BASE_DIR)
         # Per-session mute (M4): заглушает чужие плееры, не Шурочку.
@@ -233,6 +237,11 @@ class VoicePipeline:
     @property
     def wake_listener(self) -> Any:
         return self._wake_listener
+
+    def set_ui_callback(self, cb: Callable[[str, object], None] | None) -> None:
+        """Регистрирует UI-callback. Команды эмитят через ``ctx.ui_callback``;
+        для PySide6-моста callback пробрасывается в Qt-сигнал."""
+        self._ui_callback = cb
 
     def set_wake_listener(self, listener: Any) -> None:
         """UI передаёт сюда созданный WakeWordListener после pipeline.start().
@@ -491,10 +500,13 @@ class VoicePipeline:
         # («ответь на вопрос …», «подскажи …»), а не как неявный фоллбэк.
         # См. feedback memory `feedback_two_word_commands` и
         # `feedback_explicit_llm_only`.
+        stats = TurnStats(user_text=user_text, stt_ms=stt_ms)
         cmd_ctx = CommandContext(
             pipeline=self,
             full_text=user_text,
             session_manager=self._session,
+            ui_callback=self._ui_callback,
+            stats=stats,
         )
         cmd = self._router.dispatch(user_text, cmd_ctx)
         if cmd is not None:
@@ -505,9 +517,13 @@ class VoicePipeline:
             # озвучивают результат сами (сохранённая заметка / ответ LLM).
             self._play_ack(cmd.ack_after)
             return TurnResult(
-                user_text, "", wav_in, None,
+                stats.user_text, stats.llm_text, wav_in, stats.wav_out,
                 time.monotonic() - t_total,
-                stt_ms=stt_ms,
+                stt_ms=stats.stt_ms,
+                llm_ms=stats.llm_ms,
+                tts_ms=stats.tts_ms,
+                llm_prompt_tokens=stats.llm_prompt_tokens,
+                llm_completion_tokens=stats.llm_completion_tokens,
             )
 
         # 4. Нераспознано — короткий бип, без LLM.
@@ -743,6 +759,7 @@ class VoicePipeline:
         pause_threshold: float = DICTATE_PAUSE_THRESHOLD,
         max_duration: float = DICTATE_MAX_DURATION,
         initial_silence_timeout: float = DICTATE_INITIAL_TIMEOUT,
+        stats: TurnStats | None = None,
     ) -> str:
         """Записать надиктовку, прогнать через STT, вернуть строку.
 
@@ -793,18 +810,28 @@ class VoicePipeline:
                 return ""
 
             wav_for_stt = self._preprocess_for_stt(wav)
+            t_stt = time.monotonic()
             try:
                 text = self._stt.transcribe(wav_for_stt).strip()
             except STTError as exc:
                 logger.exception("Dictate: STT упал")
                 raise STTError(f"dictate: {exc}") from exc
+            stt_ms = (time.monotonic() - t_stt) * 1000
 
             logger.info("Dictate transcript: %r", text[:120])
+            if stats is not None:
+                stats.add_stt_ms(stt_ms)
+                # Перезаписываем user_text — диктованный текст важнее триггера
+                # для финального TurnResult, который видит UI.
+                if text:
+                    stats.user_text = text
             return text
 
     # ---- Q&A для QuestionCommand (M2.5) ----
 
-    def answer_question(self, question: str) -> str:
+    def answer_question(
+        self, question: str, *, stats: TurnStats | None = None
+    ) -> str:
         """Прогнать вопрос через LLM и озвучить ответ.
 
         Используется :class:`QuestionCommand`. Возвращает текст ответа.
@@ -819,20 +846,35 @@ class VoicePipeline:
             return ""
         with self._lock:
             print("🧠 Думаю…")
+            t_llm = time.monotonic()
             try:
                 answer = self._llm.generate(question).strip()
             except (LLMError, VoiceAIError) as exc:
                 logger.exception("answer_question: LLM упал")
+                if stats is not None:
+                    stats.llm_ms = (time.monotonic() - t_llm) * 1000
                 self._speak_safely(FALLBACK_LLM_ERROR)
                 raise LLMError(f"answer_question: {exc}") from exc
+            llm_ms = (time.monotonic() - t_llm) * 1000
+
+            if stats is not None:
+                stats.llm_ms = llm_ms
+                stats.llm_text = answer
 
             if not answer:
                 logger.info("answer_question: LLM вернул пустую строку")
-                self._speak_safely(FALLBACK_EMPTY_LLM)
+                wav, tts_ms = self._speak_safely(FALLBACK_EMPTY_LLM)
+                if stats is not None:
+                    stats.wav_out = wav
+                    stats.tts_ms = tts_ms
+                    stats.llm_text = FALLBACK_EMPTY_LLM
                 return ""
 
             print(f"   «{answer}»")
-            self._speak_safely(answer)
+            wav, tts_ms = self._speak_safely(answer)
+            if stats is not None:
+                stats.wav_out = wav
+                stats.tts_ms = tts_ms
             return answer
 
     # ---- Reminder callback (Этап 10) ----

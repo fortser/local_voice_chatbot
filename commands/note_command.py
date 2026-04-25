@@ -89,7 +89,9 @@ class NoteCommand(BaseCommand):
             )
         else:
             try:
-                note_text = pipeline.dictate(ack_filename=self.ack_before)
+                note_text = pipeline.dictate(
+                    ack_filename=self.ack_before, stats=ctx.stats
+                )
             except STTError:
                 logger.exception("NoteCommand: STT упал во время диктовки")
                 print("⚠ Диктовка не распознана.")
