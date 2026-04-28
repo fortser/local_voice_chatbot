@@ -197,6 +197,12 @@
     "type": "int",
     "value": 2
   },
+  "RECOGNIZED_LOG_FILE": {
+    "type": "WindowsPath",
+    "value": {
+      "__path__": "logs/recognized.log"
+    }
+  },
   "REMINDERS_FILE": {
     "type": "WindowsPath",
     "value": {

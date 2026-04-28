@@ -33,6 +33,8 @@ class QuestionCommand(BaseCommand):
     ack_before = "question_before.wav"
     synonyms = (
         "ответь на вопрос",
+        "ответь на вопросы",
+        "ответ на вопрос",
         "нужна помощь",
         "нужна консультация",
         "дай консультацию",

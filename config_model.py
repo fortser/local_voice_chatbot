@@ -62,6 +62,7 @@ class PathsSettings(_Section):
     tests_dir: Path = REPO_ROOT / "tests"
     log_file: Path = REPO_ROOT / "logs" / "voice_ai.log"
     unrecognized_log_file: Path = REPO_ROOT / "logs" / "unrecognized.log"
+    recognized_log_file: Path = REPO_ROOT / "logs" / "recognized.log"
     ack_dir: Path = REPO_ROOT / "assets" / "ack"
     reminders_file: Path = REPO_ROOT / "logs" / "reminders.json"
     session_base_dir: str = "~/Shura"

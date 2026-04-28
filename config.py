@@ -27,6 +27,7 @@ LOGS_DIR = settings.paths.logs_dir
 TESTS_DIR = settings.paths.tests_dir
 LOG_FILE = settings.paths.log_file
 UNRECOGNIZED_LOG_FILE = settings.paths.unrecognized_log_file
+RECOGNIZED_LOG_FILE = settings.paths.recognized_log_file
 ACK_DIR = settings.paths.ack_dir
 REMINDERS_FILE = settings.paths.reminders_file
 SESSION_BASE_DIR = settings.paths.session_base_dir

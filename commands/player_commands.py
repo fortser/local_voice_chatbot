@@ -28,7 +28,12 @@ logger = logging.getLogger(__name__)
 class PauseCommand(BaseCommand):
     name = "pause"
     command_type = CommandType.INSTANT
-    synonyms = ("поставь паузу", "поставь на паузу", "сделай паузу")
+    synonyms = (
+        "поставь паузу",
+        "поставь на паузу",
+        "поставить на паузу",
+        "сделай паузу",
+    )
     ack_after = "pause_after.wav"
 
     def execute(self, ctx: CommandContext) -> bool:
@@ -39,7 +44,15 @@ class PauseCommand(BaseCommand):
 class ResumeCommand(BaseCommand):
     name = "resume"
     command_type = CommandType.INSTANT
-    synonyms = ("сними паузу", "продолжи воспроизведение", "продолжай играть")
+    synonyms = (
+        "сними паузу",
+        "продолжи воспроизведение",
+        "продолжим воспроизведение",
+        "продолжите воспроизведение",
+        "продолжай играть",
+        "включи кино",
+        "кино дальше",
+    )
     ack_after = "resume_after.wav"
 
     def execute(self, ctx: CommandContext) -> bool:
@@ -51,7 +64,15 @@ class ResumeCommand(BaseCommand):
 class VolumeUpCommand(BaseCommand):
     name = "volume_up"
     command_type = CommandType.INSTANT
-    synonyms = ("сделай громче", "прибавь громкость", "увеличь громкость")
+    synonyms = (
+        "сделай громче",
+        "сделай погромче",
+        "прибавь громкость",
+        "увеличь громкость",
+        "добавь громкость",
+        "добавь громкости",
+        "добавить громкость",
+    )
     ack_after = "volume_up_after.wav"
 
     def execute(self, ctx: CommandContext) -> bool:
@@ -62,7 +83,12 @@ class VolumeUpCommand(BaseCommand):
 class VolumeDownCommand(BaseCommand):
     name = "volume_down"
     command_type = CommandType.INSTANT
-    synonyms = ("сделай тише", "убавь громкость", "уменьши громкость")
+    synonyms = (
+        "сделай тише",
+        "сделай потише",
+        "убавь громкость",
+        "уменьши громкость",
+    )
     ack_after = "volume_down_after.wav"
 
     def execute(self, ctx: CommandContext) -> bool:

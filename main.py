@@ -75,7 +75,7 @@ from config import (
 )
 from core import create_llm_provider, create_stt_provider, create_tts_provider
 from core.audio_beep import generate_beep
-from logging_config import UNRECOGNIZED_LOGGER_NAME
+from logging_config import RECOGNIZED_LOGGER_NAME, UNRECOGNIZED_LOGGER_NAME
 from core.audio_output import AudioPlayer
 from core.audio_stream import AudioStream
 from core.prompt_manager import detect_thinking_markers
@@ -95,6 +95,7 @@ from utils.errors import (
 
 logger = logging.getLogger(__name__)
 unrecognized_logger = logging.getLogger(UNRECOGNIZED_LOGGER_NAME)
+recognized_logger = logging.getLogger(RECOGNIZED_LOGGER_NAME)
 
 FALLBACK_NO_SPEECH = "Я не расслышал, повторите пожалуйста."
 FALLBACK_EMPTY_LLM = "Модель не ответила. Попробуйте ещё раз."
@@ -511,6 +512,14 @@ class VoicePipeline:
         cmd = self._router.dispatch(user_text, cmd_ctx)
         if cmd is not None:
             logger.info("Turn handled by command router: %s", cmd.name)
+            # TSV: command\tmatched_synonym\tfull_text — для подсчёта статистики
+            # использования (logs/recognized.log).
+            recognized_logger.info(
+                "%s\t%s\t%s",
+                cmd.name,
+                cmd_ctx.matched_synonym or "",
+                user_text,
+            )
             print(f"   ⚡ выполнено как команда: {cmd.name}")
             # ack_after — для INSTANT/GLOBAL играется после действия. Для
             # CONTENT-команд (note, question) ack_after обычно None: они

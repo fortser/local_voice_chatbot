@@ -55,7 +55,13 @@ class SeekForwardCommand(BaseCommand):
 
     name = "seek_forward"
     command_type = CommandType.INSTANT
-    synonyms = ("перемотай вперёд", "промотай вперёд", "следующий трек")
+    synonyms = (
+        "перемотай вперёд",
+        "перемотаю вперёд",
+        "промотай вперёд",
+        "промотаю вперёд",
+        "следующий трек",
+    )
     ack_after = "seek_forward_after.wav"
 
     def execute(self, ctx: CommandContext) -> bool:

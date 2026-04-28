@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Win32 virtual key codes (winuser.h).
 VK_LEFT = 0x25
 VK_RIGHT = 0x27
+VK_F24 = 0x87
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
@@ -63,6 +64,11 @@ VOLUME_STEP_PRESSES = 5
 # Маленькая пауза между нажатиями, чтобы Windows точно зарегистрировал
 # каждое (некоторые драйверы пропускают слишком быстрые подряд).
 INTER_PRESS_DELAY_MS = 30
+
+# Пауза после wake-keystroke, чтобы Windows успел закрыть scrnsave.scr и
+# вернуть фокус последнему активному окну до того, как мы пошлём реальную
+# команду. 50 мс хватает на типовом железе.
+WAKE_DISPLAY_DELAY_MS = 50
 
 
 # --- SendInput structures (winuser.h) ---------------------------------------
@@ -139,20 +145,38 @@ def _press_key(vk: int) -> None:
     _send_key_event(vk, key_up=True)
 
 
+def wake_display() -> None:
+    """Разбудить экран и снять Windows-заставку, если она активна.
+
+    Без этого pause/resume и стрелки, отправленные во время работы
+    `scrnsave.scr`, уходят в окно заставки, а не в плеер: первое
+    «настоящее» нажатие тратится на закрытие заставки. Шлём VK_F24 как
+    no-op-стимул (ни один распространённый плеер/браузер на него не
+    реагирует), затем ждём ~50 мс — этого хватает, чтобы scrnsave.scr
+    закрылся и фокус вернулся последнему активному окну (YouTube).
+    Идемпотентно: если заставка не активна, F24 просто игнорируется.
+    """
+    _press_key(VK_F24)
+    time.sleep(WAKE_DISPLAY_DELAY_MS / 1000)
+
+
 def play_pause() -> None:
     """Toggle Play/Pause — работает для любого плеера с media-key handler."""
     logger.info("Media key: PLAY_PAUSE")
+    wake_display()
     _press_key(VK_MEDIA_PLAY_PAUSE)
 
 
 def next_track() -> None:
     """Следующий трек / следующее видео в плейлисте YouTube."""
     logger.info("Media key: NEXT_TRACK")
+    wake_display()
     _press_key(VK_MEDIA_NEXT_TRACK)
 
 
 def prev_track() -> None:
     logger.info("Media key: PREV_TRACK")
+    wake_display()
     _press_key(VK_MEDIA_PREV_TRACK)
 
 
@@ -163,18 +187,21 @@ def arrow_right() -> None:
     активное окно. Используется для сценария «полноэкранный YouTube».
     """
     logger.info("Key: ARROW_RIGHT")
+    wake_display()
     _press_key(VK_RIGHT)
 
 
 def arrow_left() -> None:
     """Стрелка влево. На YouTube в фокусе вкладки — откат -5 секунд."""
     logger.info("Key: ARROW_LEFT")
+    wake_display()
     _press_key(VK_LEFT)
 
 
 def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None:
     """Поднять мастер-громкость на ``presses`` шагов (~2% каждый)."""
     logger.info("Media key: VOLUME_UP x%d", presses)
+    wake_display()
     for _ in range(presses):
         _press_key(VK_VOLUME_UP)
         time.sleep(INTER_PRESS_DELAY_MS / 1000)
@@ -182,6 +209,7 @@ def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None:
 
 def volume_down(presses: int = VOLUME_STEP_PRESSES) -> None:
     logger.info("Media key: VOLUME_DOWN x%d", presses)
+    wake_display()
     for _ in range(presses):
         _press_key(VK_VOLUME_DOWN)
         time.sleep(INTER_PRESS_DELAY_MS / 1000)

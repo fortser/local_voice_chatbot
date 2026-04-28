@@ -13,6 +13,7 @@ from config import (
     LOG_LEVEL,
     LOG_MAX_BYTES,
     LOGS_DIR,
+    RECOGNIZED_LOG_FILE,
     UNRECOGNIZED_LOG_FILE,
 )
 
@@ -23,6 +24,10 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # voice_ai.log и в консоль — только в свой файл, чтобы было удобно
 # периодически просматривать «что чаще всего промахивается».
 UNRECOGNIZED_LOGGER_NAME = "shura.unrecognized"
+# Симметричный логгер для распознанных команд: пишет TSV-строки
+# `command\tsynonym\tfull_text` в logs/recognized.log для подсчёта
+# статистики использования (какие команды и формулировки чаще всего).
+RECOGNIZED_LOGGER_NAME = "shura.recognized"
 
 
 def setup_logging(level: str | int | None = None) -> logging.Logger:
@@ -70,6 +75,21 @@ def setup_logging(level: str | int | None = None) -> logging.Logger:
     )
     unrec_handler.setFormatter(unrec_formatter)
     unrec.addHandler(unrec_handler)
+
+    rec = logging.getLogger(RECOGNIZED_LOGGER_NAME)
+    rec.setLevel(logging.INFO)
+    rec.propagate = False
+    rec_formatter = logging.Formatter(
+        "%(asctime)s\t%(message)s", datefmt=_DATE_FORMAT
+    )
+    rec_handler = RotatingFileHandler(
+        RECOGNIZED_LOG_FILE,
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    rec_handler.setFormatter(rec_formatter)
+    rec.addHandler(rec_handler)
 
     root._voice_ai_configured = True  # type: ignore[attr-defined]
     return root
