@@ -72,3 +72,32 @@ class SeekBackwardCommand(BaseCommand):
     def execute(self, ctx: CommandContext) -> bool:
         media_keys.prev_track()
         return True
+
+
+class SkipForwardCommand(BaseCommand):
+    """«Чуть вперёд» — стрелка → активное окно. На YouTube это +5 секунд.
+
+    В отличие от seek_forward (VK_MEDIA_NEXT_TRACK, маршрутизируется глобально),
+    стрелка уходит туда, где сейчас фокус. Целевой сценарий — полноэкранный
+    YouTube; в любом другом окне нажатие просто перенесёт курсор/выделение.
+    """
+
+    name = "skip_forward"
+    command_type = CommandType.INSTANT
+    synonyms = ("чуть вперёд", "немного вперёд", "пять секунд вперёд")
+    ack_after = "seek_forward_after.wav"
+
+    def execute(self, ctx: CommandContext) -> bool:
+        media_keys.arrow_right()
+        return True
+
+
+class SkipBackwardCommand(BaseCommand):
+    name = "skip_backward"
+    command_type = CommandType.INSTANT
+    synonyms = ("чуть назад", "немного назад", "пять секунд назад")
+    ack_after = "seek_backward_after.wav"
+
+    def execute(self, ctx: CommandContext) -> bool:
+        media_keys.arrow_left()
+        return True

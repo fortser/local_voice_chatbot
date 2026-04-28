@@ -51,6 +51,24 @@ class SessionManager:
         """Папка текущей сессии или None, если ещё ничего не сохраняли."""
         return self._current_dir
 
+    def latest_dir(self) -> Path | None:
+        """Папка для кнопки «Открыть»: текущая сессия, либо самая свежая
+        существующая на диске. Ничего не создаёт.
+
+        Возвращает ``None``, если `base_dir` ещё не существует или пуст.
+        """
+        if self._current_dir is not None:
+            return self._current_dir
+        if not self._base_dir.exists():
+            return None
+        try:
+            subdirs = [p for p in self._base_dir.iterdir() if p.is_dir()]
+        except OSError:
+            return None
+        if not subdirs:
+            return None
+        return max(subdirs, key=lambda p: p.stat().st_mtime)
+
     def ensure_session(self) -> Path:
         """Создать (или переиспользовать) папку текущей сессии и вернуть её."""
         with self._lock:

@@ -82,6 +82,24 @@
     ]
   },
   {
+    "name": "skip_forward",
+    "command_type": "instant",
+    "synonyms": [
+      "чуть вперёд",
+      "немного вперёд",
+      "пять секунд вперёд"
+    ]
+  },
+  {
+    "name": "skip_backward",
+    "command_type": "instant",
+    "synonyms": [
+      "чуть назад",
+      "немного назад",
+      "пять секунд назад"
+    ]
+  },
+  {
     "name": "screenshot",
     "command_type": "instant",
     "synonyms": [

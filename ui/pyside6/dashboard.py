@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, Slot
@@ -262,6 +263,13 @@ class DashboardWindow(QMainWindow):
         self.btn_recal = _make_btn("🔄 Калибровка")
         self.btn_recal.clicked.connect(self._bridge.request_recalibrate)
         btn_row.addWidget(self.btn_recal)
+
+        self.btn_open_session = _make_btn("📂 Папка")
+        self.btn_open_session.setToolTip(
+            "Открыть папку с заметками и скриншотами текущей или последней сессии"
+        )
+        self.btn_open_session.clicked.connect(self._on_open_session_folder)
+        btn_row.addWidget(self.btn_open_session)
         col.addLayout(btn_row)
 
         return col
@@ -434,6 +442,38 @@ class DashboardWindow(QMainWindow):
 
     def _on_standby_toggled(self, checked: bool) -> None:
         self._bridge.request_toggle_standby(checked)
+
+    def _on_open_session_folder(self) -> None:
+        import os
+
+        from config import SESSION_BASE_DIR
+
+        pipeline = self._bridge.pipeline
+        target: Path | None = None
+        if pipeline is not None:
+            try:
+                target = pipeline.session.latest_dir()
+            except Exception:
+                logger.exception("session.latest_dir() raised")
+        if target is None:
+            target = Path(SESSION_BASE_DIR).expanduser()
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                QMessageBox.warning(
+                    self,
+                    "Папка сессии",
+                    f"Не удалось создать папку:\n{target}\n\n{exc}",
+                )
+                return
+        try:
+            os.startfile(str(target))  # type: ignore[attr-defined]
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Папка сессии",
+                f"Не удалось открыть папку:\n{target}\n\n{exc}",
+            )
 
     def _on_open_settings(self) -> None:
         QMessageBox.information(

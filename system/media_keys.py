@@ -29,6 +29,8 @@ import time
 logger = logging.getLogger(__name__)
 
 # Win32 virtual key codes (winuser.h).
+VK_LEFT = 0x25
+VK_RIGHT = 0x27
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
@@ -45,6 +47,8 @@ INPUT_KEYBOARD = 1
 # YouTube не переключает ролик. Громкость и Play/Pause тоже шлём
 # как extended — это ближе к поведению физической клавиатуры.
 _EXTENDED_VKS = {
+    VK_LEFT,
+    VK_RIGHT,
     VK_VOLUME_MUTE,
     VK_VOLUME_DOWN,
     VK_VOLUME_UP,
@@ -150,6 +154,22 @@ def next_track() -> None:
 def prev_track() -> None:
     logger.info("Media key: PREV_TRACK")
     _press_key(VK_MEDIA_PREV_TRACK)
+
+
+def arrow_right() -> None:
+    """Стрелка вправо. На YouTube в фокусе вкладки — пропуск +5 секунд.
+
+    В отличие от media-keys, маршрутизация не глобальная: клавиша уходит в
+    активное окно. Используется для сценария «полноэкранный YouTube».
+    """
+    logger.info("Key: ARROW_RIGHT")
+    _press_key(VK_RIGHT)
+
+
+def arrow_left() -> None:
+    """Стрелка влево. На YouTube в фокусе вкладки — откат -5 секунд."""
+    logger.info("Key: ARROW_LEFT")
+    _press_key(VK_LEFT)
 
 
 def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None:

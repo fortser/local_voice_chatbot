@@ -75,6 +75,8 @@ def build_default_registry() -> CommandRegistry:
     from commands.stubs import (
         SeekBackwardCommand,
         SeekForwardCommand,
+        SkipBackwardCommand,
+        SkipForwardCommand,
         StopCommand,
     )
 
@@ -92,6 +94,8 @@ def build_default_registry() -> CommandRegistry:
             UnmuteCommand(),
             SeekForwardCommand(),
             SeekBackwardCommand(),
+            SkipForwardCommand(),
+            SkipBackwardCommand(),
             ScreenshotCommand(),
             # CONTENT
             NoteCommand(),
