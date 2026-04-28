@@ -234,6 +234,19 @@ class ScreenshotFlashSettings(_Section):
     zoom_ms: int = 400
 
 
+class MouseNudgeSettings(_Section):
+    """Перед скриншотом курсор быстро проходит через несколько точек поверх
+    окна переднего плана, чтобы видеоплееры (YouTube/VLC/MPC/MPV) показали
+    скрытую временную шкалу. После захвата курсор возвращается на исходную
+    позицию. Точки заданы в долях от ширины/высоты окна и подобраны так,
+    чтобы хотя бы одна попадала на область плеера в типовых раскладках."""
+
+    enabled: bool = True
+    settle_ms: int = 250
+    step_ms: int = 40
+    min_window_size: int = 200
+
+
 class UISettings(_Section):
     overlay_enabled: bool = True
     overlay_position: str = "top_right"
@@ -281,6 +294,7 @@ class Settings(_Section):
     wake_word: WakeWordSettings = Field(default_factory=WakeWordSettings)
     commands: CommandSettings = Field(default_factory=CommandSettings)
     dictate: DictateSettings = Field(default_factory=DictateSettings)
+    mouse_nudge: MouseNudgeSettings = Field(default_factory=MouseNudgeSettings)
     ui: UISettings = Field(default_factory=UISettings)
     reminders: RemindersSettings = Field(default_factory=RemindersSettings)
     ipc: IPCSettings = Field(default_factory=IPCSettings)
@@ -386,6 +400,7 @@ __all__ = [
     "CommandSettings",
     "DictateSettings",
     "ScreenshotFlashSettings",
+    "MouseNudgeSettings",
     "UISettings",
     "RemindersSettings",
     "IPCSettings",
