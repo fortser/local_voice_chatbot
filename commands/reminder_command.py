@@ -44,6 +44,8 @@ class ReminderCommand(BaseCommand):
         "создай напоминание",
         "новое напоминание",
         "поставь таймер",
+        "поставь уведомление",
+        "добавь уведомления",
     )
 
     def execute(self, ctx: CommandContext) -> bool:

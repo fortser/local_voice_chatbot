@@ -82,6 +82,19 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `core/preprocessing.py` | `compute_rms_file()` — файловый RMS для калибровок (int16 domain, совместим с voice_converter.py). Normalisation, resampling — стабы. | `numpy`, `soundfile`. |
 | `core/prompt_manager.py` | `clean_llm_response()` — снимает `<think>…</think>`, harmony-каналы `<|channel|>analysis/final`, freeform `Thinking Process:`. `detect_thinking_markers()` — авто-распознавание thinking-моделей. | `re`. |
 
+### `core/reminders/` — подсистема напоминаний (M10)
+
+| Файл | Назначение | Ключевые символы |
+|---|---|---|
+| `core/reminders/__init__.py` | Публичный фасад пакета: реэкспортирует `parse_reminder_tail`, `ReminderScheduler`, `ReminderStorage`. | — |
+| `core/reminders/parser.py` | Regex-парсер хвоста команды «напомни через N минут/часов …». Возвращает `(count, unit, text)`. Не-regex формы («через полчаса», «в 15:30») осознанно не поддерживаются. | `re`, `commands.router.normalize`. |
+| `core/reminders/storage.py` | JSON-персистентность списка напоминаний: атомарная запись через tmp-файл + `os.replace`. Поле `fire_at` — абсолютный POSIX timestamp. Метод `list_active()` возвращает все записи из файла. | `json`, `pathlib`. |
+| `core/reminders/scheduler.py` | `ReminderScheduler` — `threading.Timer` на каждое активное напоминание. При срабатывании вызывает `fire_callback(text)` под pipeline-lock'ом (блокируется, если идёт другой турн). Просроченные напоминания при старте проигрываются по возрастанию `fire_at`. Метод `list_active() -> list[dict]` — отсортированный по `fire_at` срез живых таймеров. | `threading.Timer`, `uuid`, `core.reminders.storage`. |
+| `core/reminders/listing.py` | Форматирование списка активных напоминаний в одну русскую фразу для TTS. Счётчик в нужном падеже, порядковые числительные среднего рода 1–10 + fallback, выбор единицы остатка («менее минуты» / минуты / часы). Используется `ListRemindersCommand`. | `core.reminders.num_to_words`, `core.reminders.num_to_words_manual`. |
+| `core/reminders/num_to_words.py` | Фабрика конвертера чисел в слова: переключается через `config.NUM_TO_WORDS_BACKEND` между ручным словарём (`"manual"`) и библиотекой `num2words` (`"num2words"`). | `config.NUM_TO_WORDS_BACKEND`. |
+| `core/reminders/num_to_words_manual.py` | Ручной конвертер 1–999 в русские слова + функция `plural_form()` для склонения единиц (минута/час/секунда). Без внешних зависимостей. | `_number_to_words()`, `plural_form()`. |
+| `core/reminders/num_to_words_external.py` | Обёртка над библиотекой `num2words` — альтернатива `num_to_words_manual` для расширенного диапазона. Активируется при `NUM_TO_WORDS_BACKEND="num2words"`. | `num2words`. |
+
 ### `commands/` — голосовые команды (M1–M6)
 
 | Файл | Назначение | Ключевые символы |
@@ -95,6 +108,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `commands/question_command.py` | `QuestionCommand` — единственный легитимный путь к LLM. Триггеры: «ответь на вопрос», «подскажи», «нужна помощь». Fast path или dictation. | `CommandType.LLM`. |
 | `commands/player_commands.py` | `PlayPauseCommand`, `MuteCommand`, `UnmuteCommand`, `VolumeUpCommand`, `VolumeDownCommand` — обёртки над `system.media_keys` и `system.audio_session_mute.MuteController`. | `VK_MEDIA_*`, pycaw. |
 | `commands/stubs.py` | `CancelCommand` (Esc через hotkey, не голосом — защита от ложных срабатываний), `StopCommand` (выключает wake listener), `SeekForward/Backward` (VK_MEDIA_NEXT/PREV_TRACK). | `system.media_keys`. |
+| `commands/list_reminders_command.py` | `ListRemindersCommand` — INSTANT-команда «перечисли напоминания». Читает активные таймеры из `ReminderScheduler.list_active()`, собирает одну русскую фразу через `core.reminders.listing.format_reminders_list()` и произносит её одним TTS-проходом без LLM. Синонимы: «перечисли напоминания/уведомления», «какие напоминания/уведомления», «список напоминаний/уведомлений». | `CommandType.INSTANT`; `core.reminders.listing`, `core.reminders.scheduler`. |
 
 ### `ipc/` — inter-process API
 
@@ -123,7 +137,8 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `system/__init__.py` | Package placeholder. | — |
 | `system/session_manager.py` | `SessionManager` — ленивая папка `logs/sessions/YYYY-MM-DD_HH-MM/` (+ суффикс при коллизии). Потокобезопасен (`threading.Lock`). `save_note(text)`, `save_screenshot(png_bytes)`. | `pathlib`, `threading`. |
 | `system/screenshot.py` | `take_screenshot(monitor=None) → png_bytes` через `mss`. По умолчанию — основной монитор. | `mss`, `PIL.Image`. |
-| `system/media_keys.py` | Обёртка над Win32 `keybd_event` (user32): `VK_MEDIA_PLAY_PAUSE` (0xB3), `VK_VOLUME_UP/DOWN` (0xAF/0xAE), `VK_MEDIA_NEXT/PREV_TRACK`. | `ctypes.user32`. |
+| `system/media_keys.py` | Тонкий враппер над Win32 `SendInput` (user32): `VK_MEDIA_PLAY_PAUSE` (0xB3), `VK_VOLUME_UP/DOWN` (0xAF/0xAE), `VK_MEDIA_NEXT/PREV_TRACK`, `VK_LEFT/RIGHT`. Все media-key нажатия идут с флагом `KEYEVENTF_EXTENDEDKEY` (иначе Chromium-браузеры фильтруют синтетику). Экспортирует `_send_mouse_event`, `MOUSEEVENTF_MOVE`, `MOUSEEVENTF_MOVE_NOCOALESCE` для `system.keep_awake`. Защита от screensaver'а вынесена в `system/keep_awake.py` — dismiss активного стороннего screensaver'а через SendInput невозможен (другой desktop). | `ctypes.windll.user32.SendInput`. |
+| `system/keep_awake.py` | Anti-screensaver: удерживает дисплей активным на время диалога через Win32 `SetThreadExecutionState(ES_CONTINUOUS \| ES_DISPLAY_REQUIRED)` — тот же механизм, что VLC/Chromium при fullscreen-видео. `acquire(hold_seconds, *, reason="")` ставит флаг и (пере)запускает `threading.Timer` на отложенный релиз; повторный вызов идемпотентен и продлевает таймер. `release()` снимает флаг досрочно. При краше флаг убирает ОС автоматически. Импортирует `_send_mouse_event` из `system.media_keys` для nudge'а `LASTINPUTINFO`. Интегрирован в `main.VoicePipeline` и `core.wake_word`. | API: `acquire()`, `release()`, `is_active()`. Константа `KEEP_AWAKE_AFTER_TURN_S` из `config.py`. |
 | `system/audio_session_mute.py` | `MuteController` через `pycaw`: per-session mute всех Windows audio sessions, **кроме своей**. COM init per-call (`comtypes.CoInitialize()` — STA, иначе RPC_E_CHANGED_MODE c pycaw). | `pycaw`, `comtypes`. |
 
 ### `utils/` — вспомогательное
@@ -149,6 +164,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 |---|---|
 | `tests/__init__.py` | — |
 | `tests/test_wake_word.py` | Юнит-тесты `core.wake_word._normalize` / `contains_wake_word` (чистые функции, без мик/модели). |
+| `tests/test_reminder_listing.py` | 24 теста на `core.reminders.listing`: склонения счётчика (`_count_phrase`), порядковые числительные (`_ordinal_neuter`), форматирование остатка времени (`format_remaining`) и сборку итоговой фразы (`format_reminders_list`) — включая граничные случаи (0 напоминаний, clamp отрицательного остатка, fallback для 11+). |
 | `tests/fixtures/sample.wav` | WAV-фикстура. |
 
 ### `assets/` — пререндеры

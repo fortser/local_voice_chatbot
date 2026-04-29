@@ -60,6 +60,7 @@ def build_default_registry() -> CommandRegistry:
     Imported lazily inside the function so a test importing only
     :class:`CommandRegistry` doesn't pay for the full command tree.
     """
+    from commands.list_reminders_command import ListRemindersCommand
     from commands.note_command import NoteCommand
     from commands.player_commands import (
         MuteCommand,
@@ -102,6 +103,7 @@ def build_default_registry() -> CommandRegistry:
             QuestionCommand(),
             # Reminder — INSTANT, но парсит хвост regex'ом внутри execute().
             ReminderCommand(),
+            ListRemindersCommand(),
         ]
     )
     logger.info("Command registry built: %d commands", len(registry))

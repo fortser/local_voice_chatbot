@@ -97,6 +97,19 @@ class ReminderScheduler:
         with self._mutex:
             return list(self._timers.keys())
 
+    def list_active(self) -> list[dict]:
+        """Активные напоминания, отсортированные по ``fire_at`` возрастанию.
+
+        Источник правды — JSON через ``storage.load_all()``. Фильтруем по
+        набору живых таймеров: если запись осталась в файле, но таймер уже
+        снят (например, гонка с ``_fire``), считаем её неактивной.
+        """
+        with self._mutex:
+            alive = set(self._timers.keys())
+        items = [r for r in self._storage.load_all() if r["id"] in alive]
+        items.sort(key=lambda r: r["fire_at"])
+        return items
+
     def shutdown(self) -> None:
         with self._mutex:
             for t in self._timers.values():
