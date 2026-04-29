@@ -44,6 +44,30 @@ pytest tests/test_something.py
 - List audio devices: `python -m utils.audio_devices`
 - List XTTS speakers: `python -m utils.tts_speakers`
 
+## Documentation map
+
+Project navigation lives in three documents — keep them in mind before exploring with grep/glob.
+
+- **`PROJECT_INDEX.md`** — full file-level map of the project. Tables per package (`commands/`, `core/`, `ipc/`, `system/`, `ui/`, `players/`, `utils/`, `scripts/`, `tests/`) with one-line purpose, key imports, and entry/exit points for every `.py` file. Read this **first** when looking for "where does X live" — usually faster than grep.
+- **`CHANGELOG.md`** — chronological log (Keep-a-Changelog format). Active section is `## [Unreleased]` with categories Added/Changed/Fixed/Removed. Use this when the user asks "what changed recently" — more curated than `git log`.
+- **`README.md`** — GitHub-facing showcase. Hand-maintained, updated manually before `git push` based on the accumulated `[Unreleased]`.
+- **`MIGRATION_PLAN.md`** — roadmap of stages M1–M8. This is the **plan**, not a journal; do not mistake it for a changelog.
+
+### docs-keeper agent
+
+A subagent at `.claude/agents/docs-keeper.md` (Sonnet 4.6) maintains `CHANGELOG.md` and `PROJECT_INDEX.md`. Invoke via `/update-docs` or phrases like "обнови документацию" / "зафиксируй изменения" after any of:
+
+- new `.py` module added to a package
+- new voice command registered in `commands/registry.py`
+- IPC method or provider ABC signature change
+- new test file in `tests/`
+- a `check_stage_<N>.py` was deleted (stage accepted)
+- significant bug fix in pipeline / wake-word / commands / UI
+
+The agent appends to `[Unreleased]`, syncs `PROJECT_INDEX.md` tables (reads new files to write proper descriptions), and emits a **read-only drift report** for `README.md` — it never edits README. Two hooks (`PostToolUse` + `Stop` in `.claude/hooks/`) track edited `.py`/`.md` files and remind at end-of-session.
+
+Skip lists for the hook live in `.claude/hooks/track_changes.py` (`SKIP_PATTERNS`) — extend there if a new doc file should be ignored.
+
 ## Architecture
 
 The pipeline is `AudioStream → VAD → STT → LLM → TTS → AudioPlayer`, orchestrated by `VoicePipeline` in `main.py`.

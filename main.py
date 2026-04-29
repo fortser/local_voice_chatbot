@@ -63,6 +63,7 @@ from config import (
     UNRECOGNIZED_BEEP_FREQ,
     IPC_HOST,
     IPC_PORT,
+    KEEP_AWAKE_AFTER_TURN_S,
     REMINDERS_FILE,
     SESSION_BASE_DIR,
     SILERO_DEVICE,
@@ -82,6 +83,7 @@ from core.prompt_manager import detect_thinking_markers
 from core.preprocessing import enhance_audio, preload_deepfilter
 from core.reminders import ReminderScheduler, ReminderStorage
 from core.vad import VoiceActivityDetector
+from system import keep_awake
 from system.audio_session_mute import MuteController
 from system.session_manager import SessionManager
 from utils.errors import (
@@ -351,6 +353,12 @@ class VoicePipeline:
 
     def stop(self) -> None:
         logger.info("Pipeline stop")
+        # Снять anti-screensaver hold, если был активен. Без этого Timer
+        # release'а будет висеть daemon-потоком до 120 с после выхода.
+        try:
+            keep_awake.release()
+        except Exception:
+            logger.exception("keep_awake.release failed")
         # Погасить все активные Timer'ы напоминаний, иначе daemon-потоки
         # висят до таймаута и в тестах/повторном запуске мешают.
         try:
@@ -427,6 +435,21 @@ class VoicePipeline:
             return wav_in
 
     def _process_voice_input_locked(
+        self,
+        on_stage: Callable[[str], None] | None = None,
+        wav_in: str | None = None,
+    ) -> TurnResult:
+        # Anti-screensaver: ставим ES_DISPLAY_REQUIRED на время turn'а;
+        # release-таймер на KEEP_AWAKE_AFTER_TURN_S перезапускается и при входе
+        # в turn (на случай первого turn'а после долгого idle), и при выходе
+        # (чтобы запас тишины отсчитывался от конца turn'а). См. keep_awake.py.
+        keep_awake.acquire(KEEP_AWAKE_AFTER_TURN_S, reason="turn_start")
+        try:
+            return self._process_voice_input_locked_inner(on_stage, wav_in)
+        finally:
+            keep_awake.acquire(KEEP_AWAKE_AFTER_TURN_S, reason="turn_end")
+
+    def _process_voice_input_locked_inner(
         self,
         on_stage: Callable[[str], None] | None = None,
         wav_in: str | None = None,

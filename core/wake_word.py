@@ -36,6 +36,7 @@ import time
 from typing import Callable, Iterable, Sequence
 
 from config import (
+    KEEP_AWAKE_AFTER_TURN_S,
     WAKE_WORD,
     WAKE_WORD_ACTIVE_TIMEOUT,
     WAKE_WORD_ALIASES,
@@ -47,6 +48,7 @@ from config import (
     WAKE_WORD_SCAN_WINDOW,
 )
 from core.audio_beep import generate_beep
+from system import keep_awake
 from utils.errors import AudioError, STTError, VoiceAIError
 
 logger = logging.getLogger(__name__)
@@ -229,6 +231,11 @@ class WakeWordListener:
                 return
 
             # 3. Wake-word heard — beep, record question, process.
+            # Сразу ставим anti-screensaver hold: запись/STT/LLM/TTS дальше
+            # могут занять минуту+, а turn_start в pipeline отсчитает 120с
+            # только от своей точки. Здесь окно "услышали → запись" тоже
+            # должно быть защищено.
+            keep_awake.acquire(KEEP_AWAKE_AFTER_TURN_S, reason="wake_word")
             self._emit(STATE_WAKE_HEARD, text)
             self._play_beep(self._beep_on)
 

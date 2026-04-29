@@ -234,6 +234,19 @@ class ScreenshotFlashSettings(_Section):
     zoom_ms: int = 400
 
 
+class KeepAwakeSettings(_Section):
+    """Удержание дисплея активным во время диалога с Шурочкой.
+
+    На детекте wake-word'а ставится `SetThreadExecutionState(ES_DISPLAY_REQUIRED)`,
+    Windows перестаёт запускать screensaver и гасить экран. Снимается через
+    `hold_after_turn_s` секунд после конца последнего turn'а — этот запас
+    нужен, чтобы заставка не включилась посреди раздумий пользователя между
+    двумя командами одной сессии.
+    """
+
+    hold_after_turn_s: float = 120.0
+
+
 class MouseNudgeSettings(_Section):
     """Перед скриншотом курсор быстро проходит через несколько точек поверх
     окна переднего плана, чтобы видеоплееры (YouTube/VLC/MPC/MPV) показали
@@ -292,6 +305,7 @@ class Settings(_Section):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     wake_word: WakeWordSettings = Field(default_factory=WakeWordSettings)
+    keep_awake: KeepAwakeSettings = Field(default_factory=KeepAwakeSettings)
     commands: CommandSettings = Field(default_factory=CommandSettings)
     dictate: DictateSettings = Field(default_factory=DictateSettings)
     mouse_nudge: MouseNudgeSettings = Field(default_factory=MouseNudgeSettings)

@@ -18,6 +18,13 @@ Pause/Resume в системе — это **toggle**, одна и та же кл
 для текущего состояния плеера. Это сознательное упрощение M4 —
 альтернатива (HTTP API VLC + window-focus YouTube) описана в M4-плане
 и переусложняет первую итерацию.
+
+Защита от screensaver'а — не здесь, а в `system/keep_awake.py`. Снимать
+уже активный сторонний 3D-screensaver (3Planesoft) синтетическим вводом
+невозможно: Windows запускает screensaver на отдельном desktop'е, а
+SendInput ограничен desktop'ом процесса. Поэтому мы предотвращаем его
+запуск через `SetThreadExecutionState(ES_DISPLAY_REQUIRED)` на время
+активной сессии Шурочки, а в media-key функциях никакого «wake»-кода нет.
 """
 
 from __future__ import annotations
@@ -31,7 +38,6 @@ logger = logging.getLogger(__name__)
 # Win32 virtual key codes (winuser.h).
 VK_LEFT = 0x25
 VK_RIGHT = 0x27
-VK_F24 = 0x87
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
@@ -42,6 +48,13 @@ VK_MEDIA_PLAY_PAUSE = 0xB3
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
+INPUT_MOUSE = 0
+
+# MOUSEINPUT.dwFlags — экспортируется для system.keep_awake (LASTINPUTINFO nudge).
+MOUSEEVENTF_MOVE = 0x0001
+# NOCOALESCE — не давать ОС склеить наш move с фоновыми в один WM_MOUSEMOVE,
+# чтобы LASTINPUTINFO гарантированно обновился.
+MOUSEEVENTF_MOVE_NOCOALESCE = 0x2000
 
 # Media-keys требуют флаг EXTENDEDKEY — иначе Chromium-браузеры
 # (Яндекс.Браузер, Chrome, Edge) фильтруют синтетические нажатия и
@@ -64,11 +77,6 @@ VOLUME_STEP_PRESSES = 5
 # Маленькая пауза между нажатиями, чтобы Windows точно зарегистрировал
 # каждое (некоторые драйверы пропускают слишком быстрые подряд).
 INTER_PRESS_DELAY_MS = 30
-
-# Пауза после wake-keystroke, чтобы Windows успел закрыть scrnsave.scr и
-# вернуть фокус последнему активному окну до того, как мы пошлём реальную
-# команду. 50 мс хватает на типовом железе.
-WAKE_DISPLAY_DELAY_MS = 50
 
 
 # --- SendInput structures (winuser.h) ---------------------------------------
@@ -135,6 +143,18 @@ def _send_key_event(vk: int, key_up: bool) -> None:
         logger.warning("SendInput не прошёл для vk=0x%02X (sent=%d, err=%d)", vk, sent, err)
 
 
+def _send_mouse_event(flags: int, dx: int = 0, dy: int = 0) -> None:
+    """Синтетический mouse-input через SendInput."""
+    inp = _INPUT(type=INPUT_MOUSE)
+    inp.mi = _MOUSEINPUT(
+        dx=dx, dy=dy, mouseData=0, dwFlags=flags, time=0, dwExtraInfo=0,
+    )
+    sent = ctypes.windll.user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+    if sent != 1:
+        err = ctypes.windll.kernel32.GetLastError()
+        logger.warning("SendInput(mouse) не прошёл (flags=0x%x, sent=%d, err=%d)", flags, sent, err)
+
+
 def _press_key(vk: int) -> None:
     """Эмулировать одно нажатие+отпускание клавиши через SendInput.
 
@@ -145,38 +165,20 @@ def _press_key(vk: int) -> None:
     _send_key_event(vk, key_up=True)
 
 
-def wake_display() -> None:
-    """Разбудить экран и снять Windows-заставку, если она активна.
-
-    Без этого pause/resume и стрелки, отправленные во время работы
-    `scrnsave.scr`, уходят в окно заставки, а не в плеер: первое
-    «настоящее» нажатие тратится на закрытие заставки. Шлём VK_F24 как
-    no-op-стимул (ни один распространённый плеер/браузер на него не
-    реагирует), затем ждём ~50 мс — этого хватает, чтобы scrnsave.scr
-    закрылся и фокус вернулся последнему активному окну (YouTube).
-    Идемпотентно: если заставка не активна, F24 просто игнорируется.
-    """
-    _press_key(VK_F24)
-    time.sleep(WAKE_DISPLAY_DELAY_MS / 1000)
-
-
 def play_pause() -> None:
     """Toggle Play/Pause — работает для любого плеера с media-key handler."""
     logger.info("Media key: PLAY_PAUSE")
-    wake_display()
     _press_key(VK_MEDIA_PLAY_PAUSE)
 
 
 def next_track() -> None:
     """Следующий трек / следующее видео в плейлисте YouTube."""
     logger.info("Media key: NEXT_TRACK")
-    wake_display()
     _press_key(VK_MEDIA_NEXT_TRACK)
 
 
 def prev_track() -> None:
     logger.info("Media key: PREV_TRACK")
-    wake_display()
     _press_key(VK_MEDIA_PREV_TRACK)
 
 
@@ -187,21 +189,18 @@ def arrow_right() -> None:
     активное окно. Используется для сценария «полноэкранный YouTube».
     """
     logger.info("Key: ARROW_RIGHT")
-    wake_display()
     _press_key(VK_RIGHT)
 
 
 def arrow_left() -> None:
     """Стрелка влево. На YouTube в фокусе вкладки — откат -5 секунд."""
     logger.info("Key: ARROW_LEFT")
-    wake_display()
     _press_key(VK_LEFT)
 
 
 def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None:
     """Поднять мастер-громкость на ``presses`` шагов (~2% каждый)."""
     logger.info("Media key: VOLUME_UP x%d", presses)
-    wake_display()
     for _ in range(presses):
         _press_key(VK_VOLUME_UP)
         time.sleep(INTER_PRESS_DELAY_MS / 1000)
@@ -209,7 +208,6 @@ def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None:
 
 def volume_down(presses: int = VOLUME_STEP_PRESSES) -> None:
     logger.info("Media key: VOLUME_DOWN x%d", presses)
-    wake_display()
     for _ in range(presses):
         _press_key(VK_VOLUME_DOWN)
         time.sleep(INTER_PRESS_DELAY_MS / 1000)

@@ -110,6 +110,11 @@ WAKE_WORD_BEEP_SAMPLE_RATE = settings.wake_word.beep_sample_rate
 WAKE_WORD_BEEP_AMPLITUDE = settings.wake_word.beep_amplitude
 WAKE_HOTKEY = settings.wake_word.hotkey
 
+# ====== Keep-awake (anti-screensaver) ======
+# Сколько держать ES_DISPLAY_REQUIRED после последнего turn'а сессии,
+# чтобы заставка не включилась посреди раздумий пользователя.
+KEEP_AWAKE_AFTER_TURN_S = settings.keep_awake.hold_after_turn_s
+
 # ====== Команды ======
 COMMAND_PARSE_FUZZY_THRESHOLD = settings.commands.fuzzy_threshold
 COMMAND_LLM_FALLBACK = settings.commands.llm_fallback
