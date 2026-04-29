@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-29",
+  "_comment": "Список команд для полноэкранной шпаргалки при пробуждении. Скопируй в config/wake_hints.json и правь под себя. См. commands/hint_provider.py.",
+  "items": [
+    {"command": "note",           "label": "запиши заметку",       "show": true,  "order": 1},
+    {"command": "screenshot",     "label": "сделай скриншот",      "show": true,  "order": 2},
+    {"command": "question",       "label": "ответь на вопрос",     "show": true,  "order": 3},
+    {"command": "pause",          "label": "пауза",                "show": true,  "order": 4},
+    {"command": "resume",         "label": "продолжи",             "show": true,  "order": 5},
+    {"command": "mute",           "label": "выключи звук",         "show": true,  "order": 6},
+    {"command": "unmute",         "label": "включи звук",          "show": true,  "order": 7},
+    {"command": "volume_up",      "label": "сделай громче",        "show": true,  "order": 8},
+    {"command": "volume_down",    "label": "сделай тише",          "show": true,  "order": 9},
+    {"command": "seek_forward",   "label": "следующий трек",       "show": true,  "order": 10},
+    {"command": "seek_backward",  "label": "предыдущий трек",      "show": false},
+    {"command": "skip_forward",   "label": "перемотай вперёд",     "show": false},
+    {"command": "skip_backward",  "label": "перемотай назад",      "show": false},
+    {"command": "reminder",       "label": "напомни через",        "show": true,  "order": 11},
+    {"command": "list_reminders", "label": "перечисли напоминания","show": false},
+    {"command": "stop",           "label": "стоп",                 "show": false}
+  ]
+}

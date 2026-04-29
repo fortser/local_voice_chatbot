@@ -73,6 +73,7 @@ def build_default_registry() -> CommandRegistry:
     from commands.question_command import QuestionCommand
     from commands.reminder_command import ReminderCommand
     from commands.screenshot_command import ScreenshotCommand
+    from commands.translate_video_command import TranslateVideoCommand
     from commands.stubs import (
         SeekBackwardCommand,
         SeekForwardCommand,
@@ -98,6 +99,7 @@ def build_default_registry() -> CommandRegistry:
             SkipForwardCommand(),
             SkipBackwardCommand(),
             ScreenshotCommand(),
+            TranslateVideoCommand(),
             # CONTENT
             NoteCommand(),
             QuestionCommand(),

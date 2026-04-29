@@ -61,6 +61,13 @@ pystray>=0.19,<1          # системный трей (Windows/macOS/Linux)
 Pillow>=10.0              # генерация PNG-иконки для трея
 pynput>=1.7,<2            # глобальная hotkey без прав администратора
 
+# --- Screen automation (TranslateVideoCommand) ---
+# Нужны для эмуляции клика по кнопке «Перевести и озвучить» в плеере
+# YouTube. opencv-python — для параметра confidence в locateOnScreen
+# (без него pyautogui требует пиксель-в-пиксель совпадения).
+pyautogui>=0.9.54,<1
+opencv-python>=4.8,<5
+
 # --- Reminders (Этап 10) ---
 # Опционально: альтернативный бэкенд «число → русские слова» для фразы
 # подтверждения напоминания. Переключается `NUM_TO_WORDS_BACKEND` в

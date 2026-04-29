@@ -44,6 +44,9 @@ ACK_DIR = BASE_DIR / "assets" / "ack"
 #
 # `before` играется ПЕРЕД диктовкой (только CONTENT-команды: note, question).
 # `after` играется ПОСЛЕ выполнения (INSTANT/GLOBAL).
+# `fail` — альтернативный «ПОСЛЕ» для случаев, когда команда не смогла
+# выполниться (например, не нашла иконку на экране). Команда сама решает,
+# какой файл проиграть; пайплайн знает только про ack_after.
 ACK_PHRASES: dict[str, dict[str, str]] = {
     # CONTENT
     "note":          {"before": "готова записать заметку, диктуйте",
@@ -62,6 +65,9 @@ ACK_PHRASES: dict[str, dict[str, str]] = {
     "unmute":        {"after":  "включила звук"},
     # INSTANT — скриншот
     "screenshot":    {"after":  "сделала скриншот"},
+    # INSTANT — перевод видео в Яндекс.Браузере
+    "translate_video": {"after": "включаю перевод",
+                        "fail":  "не получилось включить перевод"},
     # GLOBAL
     "stop":          {"after":  "остановилась"},
     "cancel":        {"after":  "отменила"},
@@ -78,10 +84,10 @@ def _enumerate_targets() -> list[tuple[str, str, str]]:
     out: list[tuple[str, str, str]] = []
     for cmd, phases in ACK_PHRASES.items():
         for phase, text in phases.items():
-            if phase not in ("before", "after"):
+            if phase not in ("before", "after", "fail"):
                 raise ValueError(
                     f"Unknown phase {phase!r} for command {cmd!r}; "
-                    "expected 'before' or 'after'"
+                    "expected 'before', 'after' or 'fail'"
                 )
             out.append((cmd, phase, text))
     return out

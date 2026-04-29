@@ -38,6 +38,23 @@ from config import (
     SCREENSHOT_FLASH_ENABLED,
     SCREENSHOT_FLASH_HOLD_MS,
     SCREENSHOT_FLASH_ZOOM_MS,
+    WAKE_HINT_ENABLED,
+    WAKE_HINT_FADE_IN_MS,
+    WAKE_HINT_FADE_OUT_MS,
+    WAKE_HINT_FONT_PT,
+    WAKE_HINT_HOLD_MS,
+    WAKE_HINT_MAX_ITEMS,
+    WAKE_HINT_MONITOR,
+    WAKE_HINT_OPACITY,
+    WAKE_HINT_BACKDROP_COLOR,
+    WAKE_HINT_BACKDROP_ENABLED,
+    WAKE_HINT_SHADOW_BLUR,
+    WAKE_HINT_SHADOW_COLOR,
+    WAKE_HINT_SHADOW_ENABLED,
+    WAKE_HINT_TEXT_COLOR,
+    WAKE_HINT_TRIGGER_STATE,
+    WAKE_HINT_VERTICAL_ALIGN,
+    WAKE_HINTS_FILE,
 )
 
 from .bridge import PipelineBridge
@@ -45,6 +62,7 @@ from .widgets.devices_panel import DevicesPanel
 from .widgets.level_meter import LevelMeter
 from .widgets.screenshot_flash import ScreenshotFlashOverlay
 from .widgets.status_indicator import StatusIndicator
+from .widgets.wake_hint_overlay import WakeHintOverlay
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +159,13 @@ class DashboardWindow(QMainWindow):
         # Активные flash-оверлеи: top-level QWidget'ы без Qt-родителя — без
         # этой ссылки Python GC съедает обёртку до появления окна.
         self._flash_overlays: list[Any] = []
+
+        # Wake-hint overlay: один переиспользуемый экземпляр. Создаётся лениво
+        # при первом срабатывании, но только если фича включена. Список строк
+        # подгружается тогда же — он зависит от готового CommandRegistry.
+        self._wake_hint: WakeHintOverlay | None = None
+        self._wake_hint_lines: list[str] | None = None
+        self._wake_hint_active = False
 
     # ---- layout helpers ---------------------------------------------------
 
@@ -285,6 +310,66 @@ class DashboardWindow(QMainWindow):
                 float(pipeline.vad.noise_rms), float(pipeline.vad.threshold)
             )
             self._refresh_level_text()
+        self._update_wake_hint(name)
+
+    # ---- wake-hint overlay -----------------------------------------------
+
+    def _update_wake_hint(self, state_name: str) -> None:
+        """Показ/скрытие полноэкранной шпаргалки команд по смене state."""
+        if not WAKE_HINT_ENABLED:
+            return
+        if state_name == WAKE_HINT_TRIGGER_STATE:
+            self._show_wake_hint()
+        elif self._wake_hint_active and state_name not in {
+            "wake_heard", "wake_active",
+        }:
+            # Любой переход «дальше по конвейеру» (processing/speaking/idle/…)
+            # — повод убрать шпаргалку, чтобы она не загораживала ответ.
+            self._hide_wake_hint()
+
+    def _show_wake_hint(self) -> None:
+        if self._wake_hint is None:
+            self._wake_hint = WakeHintOverlay(
+                hold_ms=WAKE_HINT_HOLD_MS,
+                fade_in_ms=WAKE_HINT_FADE_IN_MS,
+                fade_out_ms=WAKE_HINT_FADE_OUT_MS,
+                opacity=WAKE_HINT_OPACITY,
+                font_pt=WAKE_HINT_FONT_PT,
+                monitor=WAKE_HINT_MONITOR,
+                vertical_align=WAKE_HINT_VERTICAL_ALIGN,
+                text_color=WAKE_HINT_TEXT_COLOR,
+                shadow_enabled=WAKE_HINT_SHADOW_ENABLED,
+                shadow_color=WAKE_HINT_SHADOW_COLOR,
+                shadow_blur=WAKE_HINT_SHADOW_BLUR,
+                backdrop_enabled=WAKE_HINT_BACKDROP_ENABLED,
+                backdrop_color=WAKE_HINT_BACKDROP_COLOR,
+            )
+        if self._wake_hint_lines is None:
+            self._wake_hint_lines = self._build_wake_hint_lines()
+        if not self._wake_hint_lines:
+            return
+        self._wake_hint_active = True
+        self._wake_hint.show_lines(self._wake_hint_lines)
+
+    def _hide_wake_hint(self) -> None:
+        self._wake_hint_active = False
+        if self._wake_hint is not None:
+            self._wake_hint.hide_now()
+
+    def _build_wake_hint_lines(self) -> list[str]:
+        try:
+            from commands.hint_provider import load_hint_lines
+            from commands.registry import build_default_registry
+
+            registry = build_default_registry()
+            return load_hint_lines(
+                registry,
+                hints_file=WAKE_HINTS_FILE,
+                max_items=WAKE_HINT_MAX_ITEMS,
+            )
+        except Exception:
+            logger.exception("WakeHint: не удалось собрать список команд")
+            return []
 
     def _refresh_level_text(self) -> None:
         m = self._level
@@ -502,6 +587,11 @@ class DashboardWindow(QMainWindow):
             self._devices_panel.shutdown()
         except Exception:
             logger.exception("DevicesPanel.shutdown raised")
+        if self._wake_hint is not None:
+            try:
+                self._wake_hint.close()
+            except Exception:
+                logger.exception("WakeHintOverlay.close raised")
         try:
             self._bridge.shutdown()
         except Exception:

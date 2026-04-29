@@ -31,6 +31,7 @@ RECOGNIZED_LOG_FILE = settings.paths.recognized_log_file
 ACK_DIR = settings.paths.ack_dir
 REMINDERS_FILE = settings.paths.reminders_file
 SESSION_BASE_DIR = settings.paths.session_base_dir
+SESSION_LAYOUT = settings.paths.session_layout
 TTS_OUTPUT_DIR = settings.paths.tts_output_dir
 TTS_SPEAKER_WAV = settings.paths.tts_speaker_wav
 
@@ -142,6 +143,24 @@ TRAY_ENABLED = settings.ui.tray_enabled
 SCREENSHOT_FLASH_ENABLED = settings.ui.screenshot_flash.enabled
 SCREENSHOT_FLASH_HOLD_MS = settings.ui.screenshot_flash.hold_ms
 SCREENSHOT_FLASH_ZOOM_MS = settings.ui.screenshot_flash.zoom_ms
+
+WAKE_HINT_ENABLED = settings.ui.wake_hint.enabled
+WAKE_HINT_TRIGGER_STATE = settings.ui.wake_hint.trigger_state
+WAKE_HINT_HOLD_MS = settings.ui.wake_hint.hold_ms
+WAKE_HINT_FADE_IN_MS = settings.ui.wake_hint.fade_in_ms
+WAKE_HINT_FADE_OUT_MS = settings.ui.wake_hint.fade_out_ms
+WAKE_HINT_OPACITY = settings.ui.wake_hint.opacity
+WAKE_HINT_FONT_PT = settings.ui.wake_hint.font_pt
+WAKE_HINT_MAX_ITEMS = settings.ui.wake_hint.max_items
+WAKE_HINT_MONITOR = settings.ui.wake_hint.monitor
+WAKE_HINT_VERTICAL_ALIGN = settings.ui.wake_hint.vertical_align
+WAKE_HINT_TEXT_COLOR = settings.ui.wake_hint.text_color
+WAKE_HINT_SHADOW_ENABLED = settings.ui.wake_hint.shadow_enabled
+WAKE_HINT_SHADOW_COLOR = settings.ui.wake_hint.shadow_color
+WAKE_HINT_SHADOW_BLUR = settings.ui.wake_hint.shadow_blur
+WAKE_HINT_BACKDROP_ENABLED = settings.ui.wake_hint.backdrop_enabled
+WAKE_HINT_BACKDROP_COLOR = settings.ui.wake_hint.backdrop_color
+WAKE_HINTS_FILE = settings.paths.wake_hints_file
 
 # ====== Напоминания ======
 NUM_TO_WORDS_BACKEND = settings.reminders.num_to_words_backend

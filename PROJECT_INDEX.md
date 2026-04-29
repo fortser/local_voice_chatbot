@@ -109,6 +109,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `commands/player_commands.py` | `PlayPauseCommand`, `MuteCommand`, `UnmuteCommand`, `VolumeUpCommand`, `VolumeDownCommand` — обёртки над `system.media_keys` и `system.audio_session_mute.MuteController`. | `VK_MEDIA_*`, pycaw. |
 | `commands/stubs.py` | `CancelCommand` (Esc через hotkey, не голосом — защита от ложных срабатываний), `StopCommand` (выключает wake listener), `SeekForward/Backward` (VK_MEDIA_NEXT/PREV_TRACK). | `system.media_keys`. |
 | `commands/list_reminders_command.py` | `ListRemindersCommand` — INSTANT-команда «перечисли напоминания». Читает активные таймеры из `ReminderScheduler.list_active()`, собирает одну русскую фразу через `core.reminders.listing.format_reminders_list()` и произносит её одним TTS-проходом без LLM. Синонимы: «перечисли напоминания/уведомления», «какие напоминания/уведомления», «список напоминаний/уведомлений». | `CommandType.INSTANT`; `core.reminders.listing`, `core.reminders.scheduler`. |
+| `commands/translate_video_command.py` | `TranslateVideoCommand` — INSTANT-команда «переведи видео»: эмулирует клик по кнопке «Перевести и озвучить» в панели Яндекс.Браузера поверх YouTube-плеера. Алгоритм: паркует курсор в верхнюю треть экрана, ждёт появления панели (400 мс), ищет шаблон `assets/yandex_translate_icon.png` через `pyautogui.locateOnScreen` (`confidence=0.8`), кликает и возвращает курсор. Окно браузера не активирует. Retry-бюджет динамически считается от конфига `WakeHintOverlay` (минимум 4, при hold=3500 мс — 12 попыток). `ack_after = None`; ack проигрывается вручную через `pipeline._play_ack()` — отдельные WAV для успеха и неудачи. Синонимы: «переведи видео», «переводи видео», «переведи на русский», «включи перевод», «русский перевод». | `CommandType.INSTANT`; `pyautogui` (lazy-import), `config.WAKE_HINT_*_MS`, `BASE_DIR`. WAV-ключи: `translate_video_after.wav`, `translate_video_fail.wav`. |
 
 ### `ipc/` — inter-process API
 
@@ -149,7 +150,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `utils/audio_devices.py` | `get_current_devices() → (DeviceInfo|None, DeviceInfo|None)` — текущие Windows-дефолты. CLI `python -m utils.audio_devices` — список всех устройств. | `sounddevice.query_devices`. |
 | `utils/errors.py` | Таксономия исключений: `VoiceAIError` (root), `AudioError`, `STTError`, `LLMError`, `TTSError`, `ConfigError`, `CancelledError`. | `Exception` subclasses. |
 | `utils/helpers.py` | `save_state_atomic()` — tmp-file → `os.replace` для crash-safe записи JSON-стейта. | `json`, `os.replace`. |
-| `utils/generate_ack_phrases.py` | Одноразовая генерация ack-WAV'ов в `assets/ack/` через Silero. Не перезаписывает существующее. | `core.silero_tts`. |
+| `utils/generate_ack_phrases.py` | Одноразовая генерация ack-WAV'ов в `assets/ack/` через Silero. Не перезаписывает существующее (`--overwrite` для форсирования). Поддерживает три фазы: `before` (перед диктовкой), `after` (успешное завершение), `fail` (команда не смогла выполниться — играется альтернативная фраза). Таблица `ACK_PHRASES` — источник истины для всех команд и фаз. | `core.silero_tts`. |
 | `utils/tts_speakers.py` | CLI `python -m utils.tts_speakers` — список встроенных XTTS-v2 спикеров. | `TTS.api.TTS`. |
 
 ### `players/` — медиа-адаптеры
@@ -171,7 +172,8 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 
 | Путь | Назначение |
 |---|---|
-| `assets/ack/*.wav` | Предварительно сгенерированные Silero ack-фразы для каждой команды/фазы: `note_before/after`, `screenshot_after`, `pause_after`, `mute_after/unmute_after`, `volume_up/down_after`, `seek_forward/backward_after`, `stop_after`, `cancel_after`, `question_before`, `resume_after`. Проигрываются через `AudioPlayer` мгновенно, без повторного синтеза. |
+| `assets/ack/*.wav` | Предварительно сгенерированные Silero ack-фразы для каждой команды/фазы: `note_before/after`, `screenshot_after`, `pause_after`, `mute_after/unmute_after`, `volume_up/down_after`, `seek_forward/backward_after`, `stop_after`, `cancel_after`, `question_before`, `resume_after`, `translate_video_after`, `translate_video_fail`. Проигрываются через `AudioPlayer` мгновенно, без повторного синтеза. |
+| `assets/yandex_translate_icon.png` | Шаблон кнопки «Перевести и озвучить» Яндекс.Браузера для `pyautogui.locateOnScreen`. Скриншот сделан в полноэкранном режиме YouTube — в оконном режиме фон отличается и шаблон может не совпасть. |
 
 ### `models/` — веса Whisper
 

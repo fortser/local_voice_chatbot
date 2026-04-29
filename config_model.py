@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -65,7 +65,9 @@ class PathsSettings(_Section):
     recognized_log_file: Path = REPO_ROOT / "logs" / "recognized.log"
     ack_dir: Path = REPO_ROOT / "assets" / "ack"
     reminders_file: Path = REPO_ROOT / "logs" / "reminders.json"
+    wake_hints_file: Path = REPO_ROOT / "config" / "wake_hints.json"
     session_base_dir: str = "~/Shura"
+    session_layout: Literal["per_session", "monthly"] = "monthly"
     tts_output_dir: str = "logs/tts_out"
     tts_speaker_wav: str = "tests/fixtures/sample.wav"
 
@@ -234,6 +236,40 @@ class ScreenshotFlashSettings(_Section):
     zoom_ms: int = 400
 
 
+class WakeHintSettings(_Section):
+    """Полноэкранный полупрозрачный список команд при пробуждении.
+
+    Появляется при срабатывании wake-word'а как «шпаргалка» с доступными
+    командами. Источник списка — ``config/wake_hints.json`` (если есть),
+    иначе авто-генерация из CommandRegistry.
+    """
+
+    enabled: bool = True
+    # На каком state pipeline показывать оверлей. Варианты:
+    # "wake_heard" — сразу после распознавания слова (короткое окно),
+    # "wake_active" — пока ассистент ждёт фразу (рекомендуется).
+    trigger_state: str = "wake_active"
+    hold_ms: int = 1500
+    fade_in_ms: int = 150
+    fade_out_ms: int = 250
+    opacity: float = 0.55          # 0.0–1.0, общий alpha окна
+    font_pt: int = 32
+    max_items: int = 10
+    monitor: str = "cursor"        # "cursor" | "primary" | "active_window"
+    vertical_align: str = "center" # "center" | "top" | "bottom"
+    # Цвет букв (CSS hex, "#RRGGBB"). Тёмный текст хорошо читается на светлых
+    # фонах; halo (shadow_*) обеспечивает читаемость и на тёмных.
+    text_color: str = "#1a1a1a"
+    shadow_enabled: bool = True
+    shadow_color: str = "#ffffff"  # обычно противоположный text_color для контраста
+    shadow_blur: int = 16          # радиус размытия halo, px
+    # Подложка (фон-карточка) под буквами. По умолчанию — светло-песочный
+    # solarized-base3, гармонирует с темой остального UI. Полностью прозрачный
+    # фон → backdrop_enabled=false (буквы поверх рабочего стола).
+    backdrop_enabled: bool = True
+    backdrop_color: str = "#fdf6e3"
+
+
 class KeepAwakeSettings(_Section):
     """Удержание дисплея активным во время диалога с Шурочкой.
 
@@ -267,6 +303,7 @@ class UISettings(_Section):
     overlay_margin: int = 16
     tray_enabled: bool = True
     screenshot_flash: ScreenshotFlashSettings = Field(default_factory=ScreenshotFlashSettings)
+    wake_hint: WakeHintSettings = Field(default_factory=WakeHintSettings)
 
 
 class RemindersSettings(_Section):
@@ -414,6 +451,7 @@ __all__ = [
     "CommandSettings",
     "DictateSettings",
     "ScreenshotFlashSettings",
+    "WakeHintSettings",
     "MouseNudgeSettings",
     "UISettings",
     "RemindersSettings",

@@ -66,6 +66,7 @@ from config import (
     KEEP_AWAKE_AFTER_TURN_S,
     REMINDERS_FILE,
     SESSION_BASE_DIR,
+    SESSION_LAYOUT,
     SILERO_DEVICE,
     TTS_DEVICE,
     TTS_PROVIDER,
@@ -161,7 +162,7 @@ class VoicePipeline:
         # визуальные события, не зная о Qt. Сигнатура: (kind: str, payload: dict).
         self._ui_callback: Callable[[str, object], None] | None = None
         # Lazy session — created on first save_note / save_screenshot.
-        self._session = SessionManager(SESSION_BASE_DIR)
+        self._session = SessionManager(SESSION_BASE_DIR, layout=SESSION_LAYOUT)
         # Per-session mute (M4): заглушает чужие плееры, не Шурочку.
         self._audio_mute = MuteController()
         # Pre-rendered dictation beep (in-memory, no I/O at runtime).

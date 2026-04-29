@@ -12,6 +12,15 @@
 # llm.ollama, llm.lmstudio, tts, tts.silero, tts.xtts, wake_word,
 # commands, dictate, ui, reminders, ipc, logging).
 
+# --- Пути / сессии ------------------------------------------------------------
+# [paths]
+# session_base_dir = "~/Shura"
+# session_layout = "monthly"               # "monthly" — все заметки и скриншоты
+#                                          # за месяц складываются в одну папку
+#                                          # вида YYYY-MM. "per_session" —
+#                                          # отдельная папка YYYY-MM-DD_HH-MM
+#                                          # на каждый запуск (старое поведение).
+
 # --- STT / Whisper ------------------------------------------------------------
 # [stt]
 # whisper_model_size = "large-v3-turbo"   # или "large-v3" для максимального качества
@@ -70,6 +79,28 @@
 # overlay_position = "top_right"           # top_right / top_left / bottom_right / bottom_left
 # overlay_alpha = 0.85
 # tray_enabled = true
+
+# Полноэкранная шпаргалка с командами при пробуждении ("Шурочка ...").
+# Появляется на 1.5 с поверх всех окон и плавно растворяется. Click-through —
+# не перехватывает мышь. Список редактируется в config/wake_hints.json
+# (см. config/wake_hints.example.json).
+# [ui.wake_hint]
+# enabled = true
+# trigger_state = "wake_active"           # "wake_heard" — раньше / "wake_active" — пока ждёт фразу
+# hold_ms = 1500                          # сколько висеть после fade-in
+# fade_in_ms = 150
+# fade_out_ms = 250
+# opacity = 0.55                          # 0.0–1.0, общая прозрачность окна
+# font_pt = 32
+# max_items = 10
+# monitor = "cursor"                      # "cursor" / "primary"
+# vertical_align = "center"               # "center" / "top" / "bottom"
+# text_color = "#1a1a1a"                  # CSS hex, цвет букв
+# shadow_enabled = true                   # halo вокруг букв для читаемости на любом фоне
+# shadow_color = "#ffffff"                # обычно противоположный text_color
+# shadow_blur = 16
+# backdrop_enabled = true                 # подложка-карточка под буквами
+# backdrop_color = "#fdf6e3"              # солнечный песочный (solarized base3)
 
 # --- IPC ----------------------------------------------------------------------
 # [ipc]
