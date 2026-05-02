@@ -119,27 +119,27 @@
 # PROJECT REPORTS
 
 # Project: .
-Source: Python: 93 py | 14,079 lines | 548 KB
+Source: Python: 101 py | 15,764 lines | 621 KB
 Language: PYTHON
 
 ## Packages
-commands/ — 9 modules, 0 subpackages
+commands/ — 12 modules, 0 subpackages
 core/ — 16 modules, 1 subpackages
-core.reminders/ — 6 modules, 0 subpackages
+core.reminders/ — 7 modules, 0 subpackages
 ipc/ — 4 modules, 0 subpackages
 players/ — 0 modules, 0 subpackages
-system/ — 4 modules, 0 subpackages
-tests/ — 7 modules, 0 subpackages
+system/ — 5 modules, 0 subpackages
+tests/ — 8 modules, 0 subpackages
 ui/ — 4 modules, 1 subpackages
 ui.pyside6/ — 3 modules, 1 subpackages
-ui.pyside6.widgets/ — 4 modules, 0 subpackages
+ui.pyside6.widgets/ — 5 modules, 0 subpackages
 utils/ — 6 modules, 0 subpackages
 
 ## Key Classes
 VoiceAIApp (ui/tkinter_ui.py)
 VoicePipeline (main.py)
-AudioStream (core/audio_stream.py)
 DashboardWindow : QMainWindow (ui/pyside6/dashboard.py)
+AudioStream (core/audio_stream.py)
 PipelineBridge : QObject (ui/pyside6/bridge.py)
 LMStudioLLM : LLMProvider (core/lmstudio_client.py)
 OllamaLLM : LLMProvider (core/llm.py)
@@ -148,21 +148,22 @@ _Worker : QThread (ui/pyside6/bridge.py)
 MuteController (system/audio_session_mute.py)
 
 ## Entry Points
-- check_stage_10.py
-- check_stage_5.py
-- check_stage_6.py
-- check_stage_7.py
-- check_stage_8.py
-- check_stage_9.py
-- check_stage_config_refactor.py
-- check_stage_dashboard.py
-- check_stage_m4.py
-- check_stage_m6.py
-- check_stage_m8.py
 - main.py
+- scripts/command_stats.py
 - scripts/dump_commands_snapshot.py
 - scripts/dump_config_snapshot.py
 - scripts/screenshot_dashboard.py
+- stage_test/check_stage_10.py
+- stage_test/check_stage_5.py
+- stage_test/check_stage_6.py
+- stage_test/check_stage_7.py
+- stage_test/check_stage_8.py
+- stage_test/check_stage_9.py
+- stage_test/check_stage_config_refactor.py
+- stage_test/check_stage_dashboard.py
+- stage_test/check_stage_m4.py
+- stage_test/check_stage_m6.py
+- stage_test/check_stage_m8.py
 - utils/audio_devices.py
 - utils/bluetooth_battery.py
 - utils/generate_ack_phrases.py
@@ -180,11 +181,11 @@ MuteController (system/audio_session_mute.py)
 - num2words
 - numpy
 - openai-whisper
+- opencv-python
 - pyaudio
+- pyautogui
 - pycaw
-- pydantic
-- pydantic-settings
-- ...and 11 more
+- ...and 13 more
 
 
 ---
@@ -196,8 +197,270 @@ MuteController (system/audio_session_mute.py)
   classes: BootstrapResult
   functions: _force_utf8_stdout, bootstrap
   imports: __future__, dataclasses, logging_config, utils.audio_devices
-  imported_by: check_stage_10.py, check_stage_6.py, check_stage_9.py, check_stage_m4.py, check_stage_m6.py
+  imported_by: main.py, stage_test/check_stage_10.py, stage_test/check_stage_6.py, stage_test/check_stage_9.py, stage_test/check_stage_m4.py
 
+**config.py** (176 lines)
+  imports: __future__, config_model
+  imported_by: logging_config.py, main.py, commands/note_command.py, commands/question_command.py, commands/translate_video_command.py
+
+**config_model.py** (464 lines)
+  classes: _Section, PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, WakeHintSettings, KeepAwakeSettings, MouseNudgeSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
+  functions: _deep_merge, load_settings, _diff_dict, _to_toml_primitive, save_settings
+  imports: __future__, pathlib, pydantic, tomllib, tomli
+  imported_by: config.py
+
+**logging_config.py** (96 lines)
+  functions: setup_logging
+  imports: logging, logging.handlers, config
+  imported_by: bootstrap.py, main.py
+
+**main.py** (1134 lines) [has main]
+  classes: TurnResult, VoicePipeline
+  functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
+  imports: __future__, argparse, logging, threading, time
+  imported_by: ipc/server.py, stage_test/check_stage_5.py, stage_test/check_stage_6.py
+
+## commands/
+**__init__.py** (29 lines) [package init]
+  imports: commands.base, commands.registry, commands.router
+  imported_by: main.py
+
+**base.py** (120 lines)
+  classes: TurnStats, CommandType, CommandContext, BaseCommand
+  imports: __future__, abc, dataclasses, enum
+  imported_by: commands/list_reminders_command.py, commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py
+
+**hint_provider.py** (145 lines)
+  classes: HintLine
+  functions: _auto_label, _registry_defaults, _parse_json, load_hint_lines
+  imports: __future__, logging, dataclasses, pathlib, commands.registry
+
+**list_reminders_command.py** (60 lines)
+  classes: ListRemindersCommand
+  imports: __future__, logging, commands.base, core.reminders.listing
+
+**note_command.py** (116 lines)
+  classes: NoteCommand
+  functions: _extract_tail
+  imports: __future__, logging, commands.base, commands.router, config
+  imported_by: commands/question_command.py
+
+**player_commands.py** (138 lines)
+  classes: PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand
+  imports: __future__, logging, commands.base
+
+**question_command.py** (83 lines)
+  classes: QuestionCommand
+  imports: __future__, logging, commands.base, commands.note_command, config
+
+**registry.py** (113 lines)
+  classes: CommandRegistry
+  functions: build_default_registry
+  imports: __future__, logging, commands.base
+  imported_by: commands/hint_provider.py, commands/router.py, commands/__init__.py, scripts/dump_commands_snapshot.py, tests/test_commands_registry.py
+
+**reminder_command.py** (98 lines)
+  classes: ReminderCommand
+  imports: __future__, logging, commands.base, core.reminders.num_to_words, core.reminders.parser
+
+**router.py** (147 lines)
+  classes: CommandRouter
+  functions: normalize, _strip_wake_word
+  imports: __future__, logging, commands.base, commands.registry
+  imported_by: commands/note_command.py, commands/__init__.py, core/reminders/parser.py
+
+**screenshot_command.py** (52 lines)
+  classes: ScreenshotCommand
+  imports: __future__, logging, commands.base
+
+**stubs.py** (110 lines)
+  classes: StopCommand, SeekForwardCommand, SeekBackwardCommand, SkipForwardCommand, SkipBackwardCommand
+  imports: __future__, logging, commands.base
+
+**translate_video_command.py** (206 lines)
+  classes: TranslateVideoCommand
+  imports: __future__, logging, time, commands.base, config
+
+## core/
+**__init__.py** (119 lines) [package init]
+  functions: _make_whisper, _make_ollama, _make_lmstudio, _make_xtts, _make_silero +3
+  imports: __future__, config, core.base, utils.errors
+  imported_by: main.py
+
+**audio_beep.py** (38 lines)
+  functions: generate_beep
+  imports: __future__, numpy
+  imported_by: main.py, core/wake_word.py
+
+**audio_output.py** (107 lines)
+  classes: AudioPlayer
+  imports: __future__, logging, threading, time, pathlib
+  imported_by: main.py
+
+**audio_stream.py** (247 lines)
+  classes: AudioStream
+  functions: _rms_to_percent, _compute_rms_int16
+  imports: __future__, logging, queue, threading, collections
+  imported_by: main.py, core/vad.py, stage_test/check_stage_9.py
+
+**base.py** (55 lines)
+  classes: STTProvider, LLMProvider, TTSProvider
+  imports: __future__, abc
+  imported_by: core/llm.py, core/lmstudio_client.py, core/silero_tts.py, core/stt.py, core/tts.py
+
+**llm.py** (160 lines)
+  classes: OllamaLLM
+  functions: is_thinking_model
+  imports: __future__, logging, config, core.base, core.ollama_client
+
+**llm_errors.py** (98 lines)
+  classes: LLMErrorKind
+  functions: classify_http_error, format_llm_error_message
+  imports: __future__, enum, httpx
+  imported_by: core/lmstudio_client.py, core/ollama_client.py
+
+**lmstudio_client.py** (365 lines)
+  classes: GenerateResult, LMStudioClient, LMStudioLLM
+  functions: _is_thinking_model
+  imports: __future__, logging, time, dataclasses, httpx
+
+**ollama_client.py** (181 lines)
+  classes: GenerateResult, OllamaClient
+  imports: __future__, logging, time, dataclasses, httpx
+  imported_by: core/llm.py
+
+**preprocessing.py** (259 lines)
+  functions: compute_rms, normalize_audio, resample_audio, _get_deepfilter, preload_deepfilter +1
+  imports: __future__, logging, threading, pathlib, numpy
+  imported_by: main.py, stage_test/check_stage_9.py
+
+**prompt_manager.py** (129 lines)
+  functions: strip_think_tags, strip_thinking_chains, detect_thinking_markers, clean_llm_response
+  imports: __future__
+  imported_by: main.py, core/llm.py, core/lmstudio_client.py
+
+**silero_tts.py** (351 lines)
+  classes: SileroTTS
+  functions: _truncate_at_sentence, _sanitize_for_silero, _transliterate_word, _transliterate_latin
+  imports: __future__, gc, logging, time, pathlib
+  imported_by: utils/generate_ack_phrases.py
+
+**stt.py** (232 lines)
+  classes: WhisperSTT
+  functions: _is_hallucination, _vram_snapshot, _load_audio_float32
+  imports: __future__, gc, logging, time, pathlib
+  imported_by: stage_test/check_stage_9.py
+
+**tts.py** (188 lines)
+  classes: XTSTTTS
+  functions: _vram_snapshot
+  imports: __future__, gc, logging, time, pathlib
+
+**tts_utils.py** (69 lines)
+  functions: resolve_speaker_wav, prepare_output_dir, make_output_path
+  imports: __future__, itertools, logging, time, pathlib
+  imported_by: core/silero_tts.py, core/tts.py
+
+**vad.py** (317 lines)
+  classes: VoiceActivityDetector
+  functions: _trim_trailing_silence
+  imports: __future__, logging, queue, tempfile, threading
+  imported_by: main.py, stage_test/check_stage_9.py
+
+**wake_word.py** (312 lines)
+  classes: WakeWordListener
+  functions: _normalize, contains_wake_word
+  imports: __future__, logging, threading, time, config
+  imported_by: tests/test_wake_word.py
+
+## core/reminders/
+**__init__.py** (15 lines) [package init]
+  imports: core.reminders.parser, core.reminders.scheduler, core.reminders.storage
+  imported_by: main.py
+
+**listing.py** (137 lines)
+  functions: _count_in_neuter, _ordinal_neuter, format_remaining, _count_phrase, format_reminders_list
+  imports: __future__, time, core.reminders.num_to_words, core.reminders.num_to_words_manual
+  imported_by: commands/list_reminders_command.py, tests/test_reminder_listing.py
+
+**num_to_words.py** (35 lines)
+  functions: humanize_duration
+  imports: __future__, logging, config
+  imported_by: commands/reminder_command.py, core/reminders/listing.py
+
+**num_to_words_external.py** (43 lines)
+  functions: humanize_duration
+  imports: __future__, core.reminders.num_to_words_manual, num2words
+
+**num_to_words_manual.py** (80 lines)
+  functions: _number_to_words, plural_form, humanize_duration
+  imports: __future__
+  imported_by: core/reminders/listing.py, core/reminders/num_to_words_external.py
+
+**parser.py** (83 lines)
+  functions: parse_reminder_tail, unit_to_seconds
+  imports: __future__, commands.router
+  imported_by: commands/reminder_command.py, core/reminders/__init__.py
+
+**scheduler.py** (138 lines)
+  classes: ReminderScheduler
+  imports: __future__, logging, threading, time, uuid
+  imported_by: core/reminders/__init__.py
+
+**storage.py** (80 lines)
+  classes: ReminderStorage
+  imports: __future__, logging, threading, pathlib
+  imported_by: core/reminders/scheduler.py, core/reminders/__init__.py
+
+## ipc/
+**__init__.py** (13 lines) [package init]
+  imports: ipc.client, ipc.protocol, ipc.server
+  imported_by: stage_test/check_stage_6.py
+
+**client.py** (118 lines)
+  classes: IPCRemoteError, VoiceAIClient
+  imports: __future__, logging, socket, uuid, config
+  imported_by: ipc/__init__.py, stage_test/check_stage_6.py
+
+**protocol.py** (110 lines)
+  classes: ErrorCode, ProtocolError
+  functions: send_line, recv_line
+  imports: __future__, socket, enum
+  imported_by: ipc/client.py, ipc/schemas.py, ipc/server.py, ipc/__init__.py
+
+**schemas.py** (124 lines)
+  classes: RequestEnvelope, ErrorBody, ResponseEnvelope, HealthCheckParams, GenerateOnlyParams, TranscribeAndRespondParams, RecalibrateParams, HealthCheckResult, GenerateOnlyResult, TranscribeAndRespondResult, RecalibrateResult
+  imports: __future__, pydantic, ipc.protocol
+  imported_by: ipc/server.py
+
+**server.py** (302 lines)
+  classes: _RequestHandler, _Server, VoiceAIServer
+  functions: _classify, _handle_health_check, _handle_generate_only, _handle_transcribe_and_respond, _handle_recalibrate
+  imports: __future__, logging, socket, socketserver, threading
+  imported_by: ipc/__init__.py
+
+## players/
+**__init__.py** (6 lines) [package init]
+
+## scripts/
+**command_stats.py** (92 lines) [has main]
+  functions: _parse_line, main
+  imports: __future__, argparse, collections, datetime, pathlib
+
+**dump_commands_snapshot.py** (51 lines) [has main]
+  functions: main
+  imports: __future__, pathlib, commands.registry
+
+**dump_config_snapshot.py** (78 lines) [has main]
+  functions: _encode, collect_constants, main
+  imports: __future__, pathlib, config
+
+**screenshot_dashboard.py** (108 lines) [has main]
+  classes: _FakeTurn
+  functions: main
+  imports: __future__, dataclasses, pathlib, PySide6.QtGui, PySide6.QtWidgets
+
+## stage_test/
 **check_stage_10.py** (290 lines) [has main]
   functions: _banner, _test_parser, _test_num_to_words, _run_pipeline, _test_schedule_now +4
   imports: __future__, time, pathlib, bootstrap
@@ -242,265 +505,31 @@ MuteController (system/audio_session_mute.py)
   functions: main
   imports: __future__, logging, bootstrap
 
-**config.py** (151 lines)
-  imports: __future__, config_model
-  imported_by: check_stage_6.py, check_stage_9.py, logging_config.py, main.py, commands/note_command.py
-
-**config_model.py** (396 lines)
-  classes: _Section, PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
-  functions: _deep_merge, load_settings, _diff_dict, _to_toml_primitive, save_settings
-  imports: __future__, pathlib, pydantic, tomllib, tomli
-  imported_by: config.py
-
-**logging_config.py** (76 lines)
-  functions: setup_logging
-  imports: logging, logging.handlers, config
-  imported_by: bootstrap.py, main.py
-
-**main.py** (1101 lines) [has main]
-  classes: TurnResult, VoicePipeline
-  functions: _tts_requires_gpu_swap, _start_ipc_server, run_console_mode, run_ipc_mode, main
-  imports: __future__, argparse, logging, threading, time
-  imported_by: check_stage_5.py, check_stage_6.py, ipc/server.py
-
-## commands/
-**__init__.py** (29 lines) [package init]
-  imports: commands.base, commands.registry, commands.router
-  imported_by: main.py
-
-**base.py** (120 lines)
-  classes: TurnStats, CommandType, CommandContext, BaseCommand
-  imports: __future__, abc, dataclasses, enum
-  imported_by: commands/note_command.py, commands/player_commands.py, commands/question_command.py, commands/registry.py, commands/reminder_command.py
-
-**note_command.py** (114 lines)
-  classes: NoteCommand
-  functions: _extract_tail
-  imports: __future__, logging, commands.base, commands.router, config
-  imported_by: commands/question_command.py
-
-**player_commands.py** (112 lines)
-  classes: PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand
-  imports: __future__, logging, commands.base
-
-**question_command.py** (81 lines)
-  classes: QuestionCommand
-  imports: __future__, logging, commands.base, commands.note_command, config
-
-**registry.py** (105 lines)
-  classes: CommandRegistry
-  functions: build_default_registry
-  imports: __future__, logging, commands.base
-  imported_by: commands/router.py, commands/__init__.py, scripts/dump_commands_snapshot.py, tests/test_commands_registry.py
-
-**reminder_command.py** (96 lines)
-  classes: ReminderCommand
-  imports: __future__, logging, commands.base, core.reminders.num_to_words, core.reminders.parser
-
-**router.py** (147 lines)
-  classes: CommandRouter
-  functions: normalize, _strip_wake_word
-  imports: __future__, logging, commands.base, commands.registry
-  imported_by: commands/note_command.py, commands/__init__.py, core/reminders/parser.py
-
-**screenshot_command.py** (52 lines)
-  classes: ScreenshotCommand
-  imports: __future__, logging, commands.base
-
-**stubs.py** (75 lines)
-  classes: StopCommand, SeekForwardCommand, SeekBackwardCommand
-  imports: __future__, logging, commands.base
-
-## core/
-**__init__.py** (119 lines) [package init]
-  functions: _make_whisper, _make_ollama, _make_lmstudio, _make_xtts, _make_silero +3
-  imports: __future__, config, core.base, utils.errors
-  imported_by: main.py
-
-**audio_beep.py** (38 lines)
-  functions: generate_beep
-  imports: __future__, numpy
-  imported_by: main.py, core/wake_word.py
-
-**audio_output.py** (107 lines)
-  classes: AudioPlayer
-  imports: __future__, logging, threading, time, pathlib
-  imported_by: main.py
-
-**audio_stream.py** (247 lines)
-  classes: AudioStream
-  functions: _rms_to_percent, _compute_rms_int16
-  imports: __future__, logging, queue, threading, collections
-  imported_by: check_stage_9.py, main.py, core/vad.py
-
-**base.py** (55 lines)
-  classes: STTProvider, LLMProvider, TTSProvider
-  imports: __future__, abc
-  imported_by: core/llm.py, core/lmstudio_client.py, core/silero_tts.py, core/stt.py, core/tts.py
-
-**llm.py** (160 lines)
-  classes: OllamaLLM
-  functions: is_thinking_model
-  imports: __future__, logging, config, core.base, core.ollama_client
-
-**llm_errors.py** (98 lines)
-  classes: LLMErrorKind
-  functions: classify_http_error, format_llm_error_message
-  imports: __future__, enum, httpx
-  imported_by: core/lmstudio_client.py, core/ollama_client.py
-
-**lmstudio_client.py** (365 lines)
-  classes: GenerateResult, LMStudioClient, LMStudioLLM
-  functions: _is_thinking_model
-  imports: __future__, logging, time, dataclasses, httpx
-
-**ollama_client.py** (181 lines)
-  classes: GenerateResult, OllamaClient
-  imports: __future__, logging, time, dataclasses, httpx
-  imported_by: core/llm.py
-
-**preprocessing.py** (259 lines)
-  functions: compute_rms, normalize_audio, resample_audio, _get_deepfilter, preload_deepfilter +1
-  imports: __future__, logging, threading, pathlib, numpy
-  imported_by: check_stage_9.py, main.py
-
-**prompt_manager.py** (129 lines)
-  functions: strip_think_tags, strip_thinking_chains, detect_thinking_markers, clean_llm_response
-  imports: __future__
-  imported_by: main.py, core/llm.py, core/lmstudio_client.py
-
-**silero_tts.py** (351 lines)
-  classes: SileroTTS
-  functions: _truncate_at_sentence, _sanitize_for_silero, _transliterate_word, _transliterate_latin
-  imports: __future__, gc, logging, time, pathlib
-  imported_by: utils/generate_ack_phrases.py
-
-**stt.py** (232 lines)
-  classes: WhisperSTT
-  functions: _is_hallucination, _vram_snapshot, _load_audio_float32
-  imports: __future__, gc, logging, time, pathlib
-  imported_by: check_stage_9.py
-
-**tts.py** (188 lines)
-  classes: XTSTTTS
-  functions: _vram_snapshot
-  imports: __future__, gc, logging, time, pathlib
-
-**tts_utils.py** (69 lines)
-  functions: resolve_speaker_wav, prepare_output_dir, make_output_path
-  imports: __future__, itertools, logging, time, pathlib
-  imported_by: core/silero_tts.py, core/tts.py
-
-**vad.py** (317 lines)
-  classes: VoiceActivityDetector
-  functions: _trim_trailing_silence
-  imports: __future__, logging, queue, tempfile, threading
-  imported_by: check_stage_9.py, main.py
-
-**wake_word.py** (305 lines)
-  classes: WakeWordListener
-  functions: _normalize, contains_wake_word
-  imports: __future__, logging, threading, time, config
-  imported_by: tests/test_wake_word.py
-
-## core/reminders/
-**__init__.py** (15 lines) [package init]
-  imports: core.reminders.parser, core.reminders.scheduler, core.reminders.storage
-  imported_by: main.py
-
-**num_to_words.py** (35 lines)
-  functions: humanize_duration
-  imports: __future__, logging, config
-  imported_by: commands/reminder_command.py
-
-**num_to_words_external.py** (43 lines)
-  functions: humanize_duration
-  imports: __future__, core.reminders.num_to_words_manual, num2words
-
-**num_to_words_manual.py** (80 lines)
-  functions: _number_to_words, plural_form, humanize_duration
-  imports: __future__
-  imported_by: core/reminders/num_to_words_external.py
-
-**parser.py** (83 lines)
-  functions: parse_reminder_tail, unit_to_seconds
-  imports: __future__, commands.router
-  imported_by: commands/reminder_command.py, core/reminders/__init__.py
-
-**scheduler.py** (125 lines)
-  classes: ReminderScheduler
-  imports: __future__, logging, threading, time, uuid
-  imported_by: core/reminders/__init__.py
-
-**storage.py** (80 lines)
-  classes: ReminderStorage
-  imports: __future__, logging, threading, pathlib
-  imported_by: core/reminders/scheduler.py, core/reminders/__init__.py
-
-## ipc/
-**__init__.py** (13 lines) [package init]
-  imports: ipc.client, ipc.protocol, ipc.server
-  imported_by: check_stage_6.py
-
-**client.py** (118 lines)
-  classes: IPCRemoteError, VoiceAIClient
-  imports: __future__, logging, socket, uuid, config
-  imported_by: check_stage_6.py, ipc/__init__.py
-
-**protocol.py** (110 lines)
-  classes: ErrorCode, ProtocolError
-  functions: send_line, recv_line
-  imports: __future__, socket, enum
-  imported_by: ipc/client.py, ipc/schemas.py, ipc/server.py, ipc/__init__.py
-
-**schemas.py** (124 lines)
-  classes: RequestEnvelope, ErrorBody, ResponseEnvelope, HealthCheckParams, GenerateOnlyParams, TranscribeAndRespondParams, RecalibrateParams, HealthCheckResult, GenerateOnlyResult, TranscribeAndRespondResult, RecalibrateResult
-  imports: __future__, pydantic, ipc.protocol
-  imported_by: ipc/server.py
-
-**server.py** (302 lines)
-  classes: _RequestHandler, _Server, VoiceAIServer
-  functions: _classify, _handle_health_check, _handle_generate_only, _handle_transcribe_and_respond, _handle_recalibrate
-  imports: __future__, logging, socket, socketserver, threading
-  imported_by: ipc/__init__.py
-
-## players/
-**__init__.py** (6 lines) [package init]
-
-## scripts/
-**dump_commands_snapshot.py** (51 lines) [has main]
-  functions: main
-  imports: __future__, pathlib, commands.registry
-
-**dump_config_snapshot.py** (78 lines) [has main]
-  functions: _encode, collect_constants, main
-  imports: __future__, pathlib, config
-
-**screenshot_dashboard.py** (108 lines) [has main]
-  classes: _FakeTurn
-  functions: main
-  imports: __future__, dataclasses, pathlib, PySide6.QtGui, PySide6.QtWidgets
-
 ## system/
 **__init__.py** (6 lines) [package init]
-  imported_by: commands/player_commands.py, commands/stubs.py
+  imported_by: main.py, commands/player_commands.py, commands/stubs.py, core/wake_word.py
 
 **audio_session_mute.py** (202 lines)
   classes: MuteController
   imports: __future__, logging, threading
   imported_by: main.py
 
-**media_keys.py** (168 lines)
-  classes: _KEYBDINPUT, _MOUSEINPUT, _HARDWAREINPUT, _INPUT_UNION, _INPUT
-  functions: _send_key_event, _press_key, play_pause, next_track, prev_track +2
-  imports: __future__, ctypes, logging, time
+**keep_awake.py** (104 lines)
+  functions: _set_state, _nudge_last_input, acquire, _timed_release, release +1
+  imports: __future__, ctypes, logging, threading
 
-**screenshot.py** (57 lines)
-  functions: take_screenshot
-  imports: __future__, logging, mss, mss.tools
+**media_keys.py** (214 lines)
+  classes: _KEYBDINPUT, _MOUSEINPUT, _HARDWAREINPUT, _INPUT_UNION, _INPUT
+  functions: _send_key_event, _send_mouse_event, _press_key, play_pause, next_track +5
+  imports: __future__, ctypes, logging, time
+  imported_by: system/keep_awake.py
+
+**screenshot.py** (162 lines)
+  functions: _nudge_mouse_over_foreground, _restore_cursor, take_screenshot
+  imports: __future__, logging, time, mss, mss.tools
   imported_by: commands/screenshot_command.py
 
-**session_manager.py** (117 lines)
+**session_manager.py** (170 lines)
   classes: SessionManager
   imports: __future__, logging, threading, datetime, pathlib
   imported_by: main.py
@@ -531,6 +560,10 @@ MuteController (system/audio_session_mute.py)
 **test_pipeline_smoke.py** (59 lines)
   functions: pipeline, test_voice_pipeline_init_without_audio, test_start_emits_expected_stages, test_start_stop_cycle
   imports: __future__, pytest
+
+**test_reminder_listing.py** (128 lines)
+  classes: TestCountInNeuter, TestCountPhrase, TestOrdinalNeuter, TestFormatRemaining, TestFormatRemindersList
+  imports: __future__, pytest, core.reminders.listing
 
 **test_wake_word.py** (84 lines)
   classes: TestNormalize, TestContainsWakeWord
@@ -573,10 +606,10 @@ MuteController (system/audio_session_mute.py)
   imports: __future__, logging, queue, threading, PySide6.QtCore
   imported_by: scripts/screenshot_dashboard.py, ui/pyside6/app.py, ui/pyside6/dashboard.py
 
-**dashboard.py** (470 lines)
+**dashboard.py** (600 lines)
   classes: _HealthDot, DashboardWindow
   functions: _fmt_ms
-  imports: __future__, logging, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imports: __future__, logging, pathlib, PySide6.QtCore, PySide6.QtGui
   imported_by: scripts/screenshot_dashboard.py, ui/pyside6/app.py
 
 ## ui/pyside6/widgets/
@@ -603,6 +636,12 @@ MuteController (system/audio_session_mute.py)
   imports: __future__, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets, config
   imported_by: ui/pyside6/dashboard.py
 
+**wake_hint_overlay.py** (232 lines)
+  classes: WakeHintOverlay
+  functions: _pick_screen_geometry, html_escape
+  imports: __future__, logging, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
+  imported_by: ui/pyside6/dashboard.py
+
 ## utils/
 **__init__.py** (1 lines) [package init]
 
@@ -622,7 +661,7 @@ MuteController (system/audio_session_mute.py)
   classes: VoiceAIError, AudioError, CancelledError, STTError, LLMError, OllamaError, TTSError, IPCError, ConfigError
   imported_by: main.py, commands/note_command.py, commands/question_command.py, commands/reminder_command.py, core/audio_output.py
 
-**generate_ack_phrases.py** (152 lines) [has main]
+**generate_ack_phrases.py** (158 lines) [has main]
   functions: ack_filename, _enumerate_targets, main
   imports: __future__, argparse, logging, shutil, pathlib
 
@@ -682,7 +721,7 @@ methods:
 
 ## BaseCommand (commands/base.py)
 inherits: ABC
-inherited_by: NoteCommand, PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand, QuestionCommand, ReminderCommand, ScreenshotCommand, StopCommand, SeekForwardCommand, SeekBackwardCommand
+inherited_by: ListRemindersCommand, NoteCommand, PauseCommand, ResumeCommand, VolumeUpCommand, VolumeDownCommand, MuteCommand, UnmuteCommand, QuestionCommand, ReminderCommand, ScreenshotCommand, StopCommand, SeekForwardCommand, SeekBackwardCommand, SkipForwardCommand, SkipBackwardCommand, TranslateVideoCommand
 members:
   name: str
   synonyms: Sequence[str]
@@ -769,6 +808,10 @@ methods:
   def __init__(self, bridge: PipelineBridge) -> None
   def _build_left_column(self) -> QVBoxLayout
   def _on_state_changed(self, name: str, detail: object) -> None
+  def _update_wake_hint(self, state_name: str) -> None
+  def _show_wake_hint(self) -> None
+  def _hide_wake_hint(self) -> None
+  def _build_wake_hint_lines(self) -> list[str]
   def _refresh_level_text(self) -> None
   def _on_turn_result(self, result: Any) -> None
   def _on_health(self, snap: dict) -> None
@@ -777,11 +820,7 @@ methods:
   def _on_model_error(self, msg: str) -> None
   def _on_ipc_changed(self, ok: object) -> None
   def _on_screenshot_taken(self, png: object) -> None
-  def _on_ready(self) -> None
-  def _on_fatal(self, msg: str) -> None
-  def _on_apply_model(self) -> None
-  def _on_standby_toggled(self, checked: bool) -> None
-  ...+3 more
+  ...+8 more
 """Пульт управления 960×640, двухколоночный."""
 
 ## DeepFilterSettings (config_model.py)
@@ -881,6 +920,12 @@ members:
   tts: dict[(str, Any)]
   audio: dict[(str, Any)]
 
+## HintLine [dataclass(frozen=True)] (commands/hint_provider.py)
+members:
+  command: str
+  label: str
+  order: int
+
 ## HotkeyListener (ui/hotkey.py)
 methods:
   def __init__(self, hotkey: str, callback: Callable[(..., None)]) -> None
@@ -904,6 +949,12 @@ inherits: _Section
 members:
   host: str
   port: int
+
+## KeepAwakeSettings (config_model.py)
+inherits: _Section
+members:
+  hold_after_turn_s: float
+"""Удержание дисплея активным во время диалога с Шурочкой.  На детекте wake-word'а ставится `SetThreadE..."""
 
 ## LLMError (utils/errors.py)
 inherits: VoiceAIError
@@ -989,12 +1040,31 @@ methods:
   def paintEvent(self, _event) -> None
 """Горизонтальный bar с маркерами шума и порога."""
 
+## ListRemindersCommand (commands/list_reminders_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  ack_after
+  synonyms
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
 ## LoggingSettings (config_model.py)
 inherits: _Section
 members:
   level: str
   max_bytes: int
   backup_count: int
+
+## MouseNudgeSettings (config_model.py)
+inherits: _Section
+members:
+  enabled: bool
+  settle_ms: int
+  step_ms: int
+  min_window_size: int
+"""Перед скриншотом курсор быстро проходит через несколько точек поверх окна переднего плана, чтобы вид..."""
 
 ## MuteCommand (commands/player_commands.py)
 inherits: BaseCommand
@@ -1091,11 +1161,11 @@ members:
   tests_dir: Path
   log_file: Path
   unrecognized_log_file: Path
+  recognized_log_file: Path
   ack_dir: Path
   reminders_file: Path
-  session_base_dir: str
-  tts_output_dir: str
-  ...+1 more
+  wake_hints_file: Path
+  ...+4 more
 """Пути. ``base_dir`` — корень проекта (задаётся программно, не из TOML).  ``session_base_dir`` / ``tts..."""
 
 ## PauseCommand (commands/player_commands.py)
@@ -1185,6 +1255,7 @@ methods:
   def add(self, delay_seconds: int, text: str) -> str
   def load_and_restore(self) -> tuple[(int, int)]
   def active_ids(self) -> list[str]
+  def list_active(self) -> list[dict]
   def shutdown(self) -> None
   def _schedule_timer(self, reminder: dict) -> None
   def _fire(self, reminder: dict) -> None
@@ -1302,9 +1373,11 @@ methods:
 
 ## SessionManager (system/session_manager.py)
 methods:
-  def __init__(self, base_dir: ...) -> None
+  def __init__(self, base_dir: ..., *, layout: Layout = "monthly") -> None
   property def base_dir(self) -> Path
+  property def layout(self) -> Layout
   property def current_dir(self) -> ...
+  def latest_dir(self) -> ...
   def ensure_session(self) -> Path
   def save_screenshot(self, png_data: bytes, *, prefix: str = "screenshot") -> Path
   def save_note(self, text: str) -> Path
@@ -1322,9 +1395,9 @@ members:
   llm: LLMSettings
   tts: TTSSettings
   wake_word: WakeWordSettings
+  keep_awake: KeepAwakeSettings
   commands: CommandSettings
-  dictate: DictateSettings
-  ...+4 more
+  ...+6 more
 """Корневая модель: собирает все секции в одном объекте.  Чтение из TOML — через ``load_settings()``; п..."""
 
 ## SileroSettings (config_model.py)
@@ -1349,6 +1422,27 @@ methods:
   def unload_model(self) -> None
   property def is_loaded(self) -> bool
 """Silero TTS backend (русская модель по умолчанию, CPU-friendly)."""
+
+## SkipBackwardCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+
+## SkipForwardCommand (commands/stubs.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  synonyms
+  ack_after
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+"""«Чуть вперёд» — стрелка → активное окно. На YouTube это +5 секунд.  В отличие от seek_forward (VK_ME..."""
 
 ## StatusIndicator (ui/pyside6/widgets/status_indicator.py)
 inherits: QWidget
@@ -1417,6 +1511,33 @@ methods:
   def test_word_in_middle_of_phrase(self) -> None
   def test_negatives(self, text: str) -> None
 
+## TestCountInNeuter (tests/test_reminder_listing.py)
+methods:
+  def test_one_becomes_neuter(self) -> None
+  def test_compound_one_becomes_neuter(self) -> None
+  def test_two_unchanged(self) -> None
+  def test_five_unchanged(self) -> None
+
+## TestCountPhrase (tests/test_reminder_listing.py)
+methods:
+  def test_agreement(self, n: int, expected: str) -> None
+
+## TestFormatRemaining (tests/test_reminder_listing.py)
+methods:
+  def test_under_minute(self) -> None
+  def test_minutes(self) -> None
+  def test_minutes_round_to_nearest(self) -> None
+  def test_hours(self) -> None
+  def test_hours_round(self) -> None
+
+## TestFormatRemindersList (tests/test_reminder_listing.py)
+methods:
+  def test_empty(self) -> None
+  def test_single(self) -> None
+  def test_multiple(self) -> None
+  def test_negative_remaining_clamped(self) -> None
+  def test_eleventh_uses_fallback_ordinal(self) -> None
+
 ## TestNormalize (tests/test_wake_word.py)
 methods:
   def test_lowercases(self) -> None
@@ -1425,6 +1546,11 @@ methods:
   def test_empty(self) -> None
   def test_cyrillic_stays(self) -> None
   def test_digits_kept(self) -> None
+
+## TestOrdinalNeuter (tests/test_reminder_listing.py)
+methods:
+  def test_first_to_tenth(self) -> None
+  def test_beyond_ten_fallback(self) -> None
 
 ## TranscribeAndRespondParams (ipc/schemas.py)
 inherits: BaseModel
@@ -1441,6 +1567,21 @@ members:
   output_text: str
   audio_file: ...
   processing_time: float
+
+## TranslateVideoCommand (commands/translate_video_command.py)
+inherits: BaseCommand
+members:
+  name
+  command_type
+  ack_after
+  synonyms
+  _ACK_OK
+  _ACK_FAIL
+methods:
+  def execute(self, ctx: CommandContext) -> bool
+  static def _restore_cursor(pyautogui_mod, origin) -> None
+  def _play_ok_ack(self, ctx: CommandContext) -> None
+  def _play_fail_ack(self, ctx: CommandContext) -> None
 
 ## TurnResult [dataclass] (main.py)
 members:
@@ -1479,6 +1620,7 @@ members:
   overlay_margin: int
   tray_enabled: bool
   screenshot_flash: ScreenshotFlashSettings
+  wake_hint: WakeHintSettings
 
 ## UnmuteCommand (commands/player_commands.py)
 inherits: BaseCommand
@@ -1578,7 +1720,7 @@ methods:
   def set_ui_callback(self, cb: ...) -> None
   def set_wake_listener(self, listener: Any) -> None
   def request_cancel(self) -> None
-  ...+19 more
+  ...+20 more
 """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
 
 ## VolumeDownCommand (commands/player_commands.py)
@@ -1600,6 +1742,34 @@ members:
   ack_after
 methods:
   def execute(self, ctx: CommandContext) -> bool
+
+## WakeHintOverlay (ui/pyside6/widgets/wake_hint_overlay.py)
+inherits: QWidget
+methods:
+  def __init__(self, *, hold_ms: int = 1500, fade_in_ms: int = 150, fade_out_ms: int = 250, opacity: float = 0.55, font_pt: int = 32, monitor: str = "cursor", vertical_align: str = "center", text_color: str = "#1a1a1a", shadow_enabled: bool = True, shadow_color: str = "#ffffff", shadow_blur: int = 16, backdrop_enabled: bool = True, backdrop_color: str = "#fdf6e3", parent: ... = None) -> None
+  def show_lines(self, lines: list[str]) -> None
+  def hide_now(self) -> None
+  def _qt_alignment(self) -> Qt.Alignment
+  def _reposition(self) -> None
+  def _format_html(self, lines: list[str]) -> str
+  def _start_fade_out(self) -> None
+"""Полноэкранный полупрозрачный список команд."""
+
+## WakeHintSettings (config_model.py)
+inherits: _Section
+members:
+  enabled: bool
+  trigger_state: str
+  hold_ms: int
+  fade_in_ms: int
+  fade_out_ms: int
+  opacity: float
+  font_pt: int
+  max_items: int
+  monitor: str
+  vertical_align: str
+  ...+6 more
+"""Полноэкранный полупрозрачный список команд при пробуждении.  Появляется при срабатывании wake-word'а..."""
 
 ## WakeWordListener (core/wake_word.py)
 methods:
@@ -1740,7 +1910,7 @@ methods:
 
 ## _Section (config_model.py)
 inherits: BaseModel
-inherited_by: PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
+inherited_by: PathsSettings, AudioSettings, VADSettings, DeepFilterSettings, STTSettings, OllamaSettings, LMStudioSettings, LLMSettings, SileroSettings, XTTSSettings, TTSSettings, WakeWordSettings, CommandSettings, DictateSettings, ScreenshotFlashSettings, WakeHintSettings, KeepAwakeSettings, MouseNudgeSettings, UISettings, RemindersSettings, IPCSettings, LoggingSettings, Settings
 members:
   model_config
 """База для всех секций: запрет лишних полей, чтобы ``settings.toml`` с опечаткой падал на валидации, а..."""
@@ -1787,69 +1957,11 @@ methods:
 def _force_utf8_stdout() -> None
 def bootstrap(verbose: bool = True) -> BootstrapResult
 
-## check_stage_10.py
-def _banner(title: str) -> None
-def _run_pipeline() -> 'object'
-def _test_interactive_voice(pipeline: 'object') -> None
-def _test_num_to_words() -> None
-def _test_parser() -> None
-def _test_persistence_note(pipeline: 'object') -> None
-def _test_queue_behind_answer(pipeline: 'object') -> None
-def _test_schedule_now(pipeline: 'object', delay_seconds: int = 10) -> None
-def main() -> int
-
-## check_stage_5.py
-def main() -> int
-
-## check_stage_6.py
-def _banner(title: str) -> None
-def _fail(msg: str) -> None
-def _pass(msg: str) -> None
-def _test_error_paths(client: VoiceAIClient) -> bool
-def _test_generate_only(client: VoiceAIClient) -> bool
-def _test_health(client: VoiceAIClient) -> bool
-def _test_recalibrate(client: VoiceAIClient) -> bool
-def _test_transcribe(client: VoiceAIClient) -> bool
-def main() -> int
-
-## check_stage_7.py
-def main() -> int
-
-## check_stage_8.py
-def main() -> int
-
-## check_stage_9.py
-def _banner(title: str) -> None
-def _one_pass(stt: WhisperSTT, vad: VoiceActivityDetector, idx: int) -> bool
-def main() -> int
-
-## check_stage_config_refactor.py
-def _decode_value(encoded)
-def main() -> int
-def step1_random_constants() -> bool
-def step2_toml_override() -> bool
-def step3_empty_diff_when_clean() -> bool
-
-## check_stage_dashboard.py
-def _make_app_and_bridge()
-def main() -> int
-def step1_imports() -> bool
-def step2_bridge_methods() -> bool
-def step3_bridge_signals() -> bool
-def step4_dashboard_builds() -> bool
-def step5_ready_unlocks_buttons() -> bool
-def step6_level_update() -> bool
-def step7_turn_result() -> bool
-def step8_state_change_icon() -> bool
-
-## check_stage_m4.py
-def main() -> int
-
-## check_stage_m6.py
-def main() -> int
-
-## check_stage_m8.py
-def main() -> int
+## commands/hint_provider.py
+def _auto_label(synonyms: Iterable[str]) -> str
+def _parse_json(path: Path) -> list[dict]
+def _registry_defaults(registry: CommandRegistry) -> dict[(str, HintLine)]
+def load_hint_lines(registry: CommandRegistry, *, hints_file: ..., max_items: int = 10) -> list[str]
 
 ## commands/note_command.py
 def _extract_tail(full_text: str, matched_synonym: str) -> str
@@ -1908,6 +2020,13 @@ def clean_llm_response(text: str) -> str
 def detect_thinking_markers(text: str) -> bool
 def strip_think_tags(text: str) -> str
 def strip_thinking_chains(text: str) -> str
+
+## core/reminders/listing.py
+def _count_in_neuter(n: int) -> str
+def _count_phrase(n: int) -> str
+def _ordinal_neuter(idx_one_based: int) -> str
+def format_remaining(seconds: float) -> str
+def format_reminders_list(reminders: Iterable[dict], *, now: ... = None) -> str
 
 ## core/reminders/num_to_words.py
 def humanize_duration(n: int, unit: str) -> str
@@ -1971,6 +2090,10 @@ def main() -> int
 def run_console_mode(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 def run_ipc_mode(*, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
+## scripts/command_stats.py
+def _parse_line(line: str) -> ...
+def main() -> int
+
 ## scripts/dump_commands_snapshot.py
 def main() -> None
 
@@ -1982,9 +2105,84 @@ def main() -> None
 ## scripts/screenshot_dashboard.py
 def main() -> int
 
+## stage_test/check_stage_10.py
+def _banner(title: str) -> None
+def _run_pipeline() -> 'object'
+def _test_interactive_voice(pipeline: 'object') -> None
+def _test_num_to_words() -> None
+def _test_parser() -> None
+def _test_persistence_note(pipeline: 'object') -> None
+def _test_queue_behind_answer(pipeline: 'object') -> None
+def _test_schedule_now(pipeline: 'object', delay_seconds: int = 10) -> None
+def main() -> int
+
+## stage_test/check_stage_5.py
+def main() -> int
+
+## stage_test/check_stage_6.py
+def _banner(title: str) -> None
+def _fail(msg: str) -> None
+def _pass(msg: str) -> None
+def _test_error_paths(client: VoiceAIClient) -> bool
+def _test_generate_only(client: VoiceAIClient) -> bool
+def _test_health(client: VoiceAIClient) -> bool
+def _test_recalibrate(client: VoiceAIClient) -> bool
+def _test_transcribe(client: VoiceAIClient) -> bool
+def main() -> int
+
+## stage_test/check_stage_7.py
+def main() -> int
+
+## stage_test/check_stage_8.py
+def main() -> int
+
+## stage_test/check_stage_9.py
+def _banner(title: str) -> None
+def _one_pass(stt: WhisperSTT, vad: VoiceActivityDetector, idx: int) -> bool
+def main() -> int
+
+## stage_test/check_stage_config_refactor.py
+def _decode_value(encoded)
+def main() -> int
+def step1_random_constants() -> bool
+def step2_toml_override() -> bool
+def step3_empty_diff_when_clean() -> bool
+
+## stage_test/check_stage_dashboard.py
+def _make_app_and_bridge()
+def main() -> int
+def step1_imports() -> bool
+def step2_bridge_methods() -> bool
+def step3_bridge_signals() -> bool
+def step4_dashboard_builds() -> bool
+def step5_ready_unlocks_buttons() -> bool
+def step6_level_update() -> bool
+def step7_turn_result() -> bool
+def step8_state_change_icon() -> bool
+
+## stage_test/check_stage_m4.py
+def main() -> int
+
+## stage_test/check_stage_m6.py
+def main() -> int
+
+## stage_test/check_stage_m8.py
+def main() -> int
+
+## system/keep_awake.py
+def _nudge_last_input() -> None
+def _set_state(flags: int) -> bool
+def _timed_release() -> None
+def acquire(hold_seconds: float, *, reason: str = "") -> None
+def is_active() -> bool
+def release() -> None
+
 ## system/media_keys.py
 def _press_key(vk: int) -> None
 def _send_key_event(vk: int, key_up: bool) -> None
+def _send_mouse_event(flags: int, dx: int = 0, dy: int = 0) -> None
+def arrow_left() -> None
+def arrow_right() -> None
 def next_track() -> None
 def play_pause() -> None
 def prev_track() -> None
@@ -1992,6 +2190,8 @@ def volume_down(presses: int = VOLUME_STEP_PRESSES) -> None
 def volume_up(presses: int = VOLUME_STEP_PRESSES) -> None
 
 ## system/screenshot.py
+def _nudge_mouse_over_foreground() -> None
+def _restore_cursor() -> None
 def take_screenshot(monitor: ... = None) -> bytes
 
 ## tests/conftest.py
@@ -2043,6 +2243,10 @@ def _fmt_ms(value: ...) -> str
 ## ui/pyside6/widgets/devices_panel.py
 def _format_device(info: ...) -> str
 
+## ui/pyside6/widgets/wake_hint_overlay.py
+def _pick_screen_geometry(monitor_pref: str) -> QRect
+def html_escape(s: str) -> str
+
 ## ui/tkinter_ui.py
 def run_ui(*, with_ipc: bool = True, ipc_host: str = IPC_HOST, ipc_port: int = IPC_PORT) -> int
 
@@ -2081,7 +2285,7 @@ def main() -> int
 ## commands/
 """Command subsystem for the Shurochka assistant.  The router parses post-STT text into a :class:`BaseCommand` and dispatches it. If no command matches, """
 __all__ = ['BaseCommand', 'CommandContext', 'CommandType', 'TurnStats', 'CommandRegistry', 'CommandRouter', 'build_default_registry']
-modules: base, note_command, player_commands, question_command, registry, reminder_command, router, screenshot_command, stubs
+modules: base, hint_provider, list_reminders_command, note_command, player_commands, question_command, registry, reminder_command, router, screenshot_command, stubs, translate_video_command
 
 ## core/
 """Provider factories.  Keeps orchestration code (``main.py``, check scripts, IPC) free from concrete imports: ``create_stt_provider('whisper')`` is all """
@@ -2092,7 +2296,7 @@ modules: audio_beep, audio_output, audio_stream, base, llm, llm_errors, lmstudio
 ## core.reminders/
 """Подсистема напоминаний (Этап 10).  * :mod:`parser` — regex-парсер фраз «напомни через N минут …». * :mod:`storage` — JSON-персистентность (абсолютный """
 __all__ = ['parse_reminder_tail', 'ReminderScheduler', 'ReminderStorage']
-modules: num_to_words, num_to_words_external, num_to_words_manual, parser, scheduler, storage
+modules: listing, num_to_words, num_to_words_external, num_to_words_manual, parser, scheduler, storage
 
 ## ipc/
 """IPC package — exposes server/client entry points for Stage 6.  The wire protocol is a single JSON object per line over TCP (see ``protocol``). Orchest"""
@@ -2104,10 +2308,10 @@ modules: client, protocol, schemas, server
 
 ## system/
 """System-level helpers: SessionManager (M2), screenshots (M3), volume (M5).  Empty in M1 — the package exists so commands can import lazily without hitt"""
-modules: audio_session_mute, media_keys, screenshot, session_manager
+modules: audio_session_mute, keep_awake, media_keys, screenshot, session_manager
 
 ## tests/
-modules: conftest, test_bluetooth_matcher, test_commands_registry, test_config_contract, test_config_importers, test_pipeline_smoke, test_wake_word
+modules: conftest, test_bluetooth_matcher, test_commands_registry, test_config_contract, test_config_importers, test_pipeline_smoke, test_reminder_listing, test_wake_word
 
 ## ui/
 subpackages: pyside6
@@ -2120,7 +2324,7 @@ modules: app, bridge, dashboard
 
 ## ui.pyside6.widgets/
 """Кастомные виджеты для PySide6-UI: LevelMeter, StatusIndicator и т.д."""
-modules: devices_panel, level_meter, screenshot_flash, status_indicator
+modules: devices_panel, level_meter, screenshot_flash, status_indicator, wake_hint_overlay
 
 ## utils/
 modules: audio_devices, bluetooth_battery, errors, generate_ack_phrases, helpers, tts_speakers
@@ -2141,7 +2345,7 @@ modules: audio_devices, bluetooth_battery, errors, generate_ack_phrases, helpers
 - core/lmstudio_client.py
 - core/ollama_client.py
 - core/preprocessing.py
-- ...and 16 more
+- ...and 17 more
 
 ## Models/Entities
 - config_model.py
@@ -2160,30 +2364,32 @@ modules: audio_devices, bluetooth_battery, errors, generate_ack_phrases, helpers
 - utils/tts_speakers.py
 
 ## Config
-- check_stage_config_refactor.py
 - config.py
 - logging_config.py
 - scripts/dump_config_snapshot.py
 
 ## Tests
-- tests/__init__.py
-- tests/conftest.py
-- tests/test_bluetooth_matcher.py
-- tests/test_commands_registry.py
-- tests/test_config_contract.py
-- tests/test_config_importers.py
-- tests/test_pipeline_smoke.py
-- tests/test_wake_word.py
+- stage_test/check_stage_10.py
+- stage_test/check_stage_5.py
+- stage_test/check_stage_6.py
+- stage_test/check_stage_7.py
+- stage_test/check_stage_8.py
+- stage_test/check_stage_9.py
+- stage_test/check_stage_config_refactor.py
+- stage_test/check_stage_dashboard.py
+- stage_test/check_stage_m4.py
+- stage_test/check_stage_m6.py
+- ...and 10 more
 
 ## Other
 - bootstrap.py
-- check_stage_10.py
-- check_stage_5.py
-- check_stage_6.py
-- check_stage_7.py
-- check_stage_8.py
-- check_stage_9.py
-- check_stage_dashboard.py
-- check_stage_m4.py
-- check_stage_m6.py
-- ...and 35 more
+- commands/__init__.py
+- commands/base.py
+- commands/hint_provider.py
+- commands/list_reminders_command.py
+- commands/note_command.py
+- commands/player_commands.py
+- commands/question_command.py
+- commands/registry.py
+- commands/reminder_command.py
+- ...and 31 more

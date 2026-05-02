@@ -96,3 +96,6 @@ python
 gitpush.bat
 claude_start.bat
 ЯMake_llm_report.bat
+start_codex_utf8.cmd
+start_codex_windows_terminal.cmd
+AGENTS.md
