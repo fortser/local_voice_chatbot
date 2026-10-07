@@ -22,6 +22,18 @@ if str(REPO_ROOT) not in sys.path:
 
 
 @pytest.fixture
+def screenshot_png() -> bytes:
+    """Deterministic screen-sized PNG without screen capture hardware."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    output = BytesIO()
+    Image.new("RGB", (1280, 720), "#639d8a").save(output, format="PNG")
+    return output.getvalue()
+
+
+@pytest.fixture
 def mock_providers(mocker):
     """Подменяет фабрики провайдеров в ``main`` на заглушки.
 

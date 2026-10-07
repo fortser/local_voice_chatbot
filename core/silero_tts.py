@@ -43,7 +43,7 @@ from config import (
     SILERO_SPEAKER,
     TTS_LANGUAGE,
 )
-from core.base import TTSProvider
+from core.base import TTSProvider, model_device
 from core.tts_utils import make_output_path
 from utils.errors import TTSError
 
@@ -207,6 +207,14 @@ class SileroTTS(TTSProvider):
 
     # ---- TTSProvider ----
 
+    @property
+    def model_name(self) -> str:
+        return self._model_id
+
+    @property
+    def device(self) -> str:
+        return model_device(self._model, self._device)
+
     def load_model(self) -> None:
         if self._model is not None:
             logger.debug("Silero already loaded, skipping")
@@ -331,7 +339,6 @@ class SileroTTS(TTSProvider):
         if self._model is None:
             return
         logger.info("Unloading Silero")
-        del self._model
         self._model = None
         gc.collect()
         # Silero обычно живёт на CPU, но на cuda тоже чистим.

@@ -12,7 +12,8 @@
 Папка создаётся **лениво** при первом сохранении — пустые директории
 не плодим.
 
-Потокобезопасность: все мутирующие операции (`save_note`, `save_screenshot`)
+Потокобезопасность: все сохранения (`save_note`, `save_screenshot`,
+`save_note_with_screenshot`)
 сериализуются внутренним `threading.Lock`. Чтения (`current_dir`) могут
 вернуть None пока ничего не сохраняли — это валидное состояние.
 
@@ -23,13 +24,15 @@ Layout (monthly):
             notes.txt                                    (все заметки месяца)
             screenshot_2026-04-29_14-30-12.png           (M3)
             screenshot_note_2026-04-29_14-30-12.png      (M7)
-            screenshot_note_2026-04-29_14-30-12.txt
+            notes.html                                  (опциональный журнал)
+            thumbnails/screenshot_note_2026-04-29_14-30-12.png
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -45,6 +48,15 @@ FILE_STAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 _WEEKDAY_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 Layout = Literal["per_session", "monthly"]
+
+
+@dataclass(frozen=True)
+class NoteSaveResult:
+    text_path: Path
+    html_path: Path | None = None
+    screenshot_path: Path | None = None
+    thumbnail_path: Path | None = None
+    warnings: tuple[str, ...] = ()
 
 
 class SessionManager:
@@ -104,18 +116,9 @@ class SessionManager:
         if not png_data:
             raise ValueError("save_screenshot: пустые данные")
         with self._lock:
-            session_dir = self._ensure_session_locked()
-            stamp = datetime.now().strftime(FILE_STAMP_FORMAT)
-            candidate = session_dir / f"{prefix}_{stamp}.png"
-            n = 2
-            while candidate.exists():
-                candidate = session_dir / f"{prefix}_{stamp}_{n}.png"
-                n += 1
-            candidate.write_bytes(png_data)
-            logger.info(
-                "Скриншот сохранён: %s (%d KB)", candidate, len(png_data) // 1024
-            )
-            return candidate
+            now = datetime.now()
+            session_dir = self._ensure_session_locked(now)
+            return self._save_png_locked(session_dir, png_data, prefix, now)
 
     def save_note(self, text: str) -> Path:
         """Дописать заметку в `notes.txt` и вернуть путь к файлу.
@@ -126,19 +129,89 @@ class SessionManager:
         if not text:
             raise ValueError("save_note: пустой текст")
         with self._lock:
-            session_dir = self._ensure_session_locked()
-            notes_path = session_dir / NOTES_FILE
             now = datetime.now()
-            stamp = f"{now.strftime('%Y-%m-%d')} {_WEEKDAY_RU[now.weekday()]} {now.strftime('%H:%M:%S')}"
-            with notes_path.open("a", encoding="utf-8") as f:
-                f.write(f"[{stamp}] {text}\n")
-            logger.info("Заметка сохранена: %s (%d символов)", notes_path, len(text))
-            return notes_path
+            return self._save_note_locked(text, now)
+
+    def save_note_with_screenshot(
+        self, text: str, png_data: bytes | None = None, *,
+        captured_at: datetime | None = None,
+    ) -> NoteSaveResult:
+        """Save TXT first, then add this note to the monthly HTML journal.
+
+        Image/HTML failures return warnings; a TXT failure raises instead.
+        The save time chooses the month even if dictation crosses midnight.
+        """
+        from system.note_journal import JOURNAL_FILE, append_entry, make_thumbnail
+        from utils.file_io import atomic_write_bytes
+
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("save_note: пустой текст")
+        with self._lock:
+            now = datetime.now()
+            text_path = self._save_note_locked(text, now)
+            warnings = []
+            html_path = screenshot_path = thumbnail_path = None
+            journal_dir = self._base_dir / now.strftime(MONTHLY_DIR_FORMAT)
+            try:
+                journal_dir.mkdir(parents=True, exist_ok=True)
+                if png_data:
+                    try:
+                        thumbnail = make_thumbnail(png_data)
+                        screenshot_path = self._save_png_locked(
+                            journal_dir, png_data, "screenshot_note", now)
+                        thumbs = journal_dir / "thumbnails"
+                        thumbs.mkdir(exist_ok=True)
+                        candidate = thumbs / screenshot_path.name
+                        atomic_write_bytes(candidate, thumbnail)
+                        thumbnail_path = candidate
+                    except Exception:
+                        logger.exception("Не удалось сохранить снимок заметки")
+                        warnings.append("Заметка сохранена, но скриншот недоступен.")
+                else:
+                    warnings.append("Заметка сохранена, но скриншот недоступен.")
+                candidate = journal_dir / JOURNAL_FILE
+                append_entry(candidate, text, self._note_stamp(now), saved_at=now,
+                             screenshot=screenshot_path, thumbnail=thumbnail_path,
+                             captured_at=captured_at)
+                html_path = candidate
+            except Exception:
+                logger.exception("Не удалось обновить HTML-журнал заметок")
+                warnings.append("Заметка сохранена в текстовый файл, но журнал не обновлён.")
+            return NoteSaveResult(text_path, html_path, screenshot_path,
+                                  thumbnail_path, tuple(warnings))
 
     # ---- internals ----
 
-    def _ensure_session_locked(self) -> Path:
-        now = datetime.now()
+    @staticmethod
+    def _note_stamp(now: datetime) -> str:
+        return f"{now:%Y-%m-%d} {_WEEKDAY_RU[now.weekday()]} {now:%H:%M:%S}"
+
+    def _save_note_locked(self, text: str, now: datetime) -> Path:
+        notes_path = self._ensure_session_locked(now) / NOTES_FILE
+        with notes_path.open("a", encoding="utf-8") as stream:
+            stream.write(f"[{self._note_stamp(now)}] {text}\n")
+        logger.info("Заметка сохранена: %s (%d символов)", notes_path, len(text))
+        return notes_path
+
+    @staticmethod
+    def _save_png_locked(directory: Path, data: bytes, prefix: str, now: datetime) -> Path:
+        stem = f"{prefix}_{now.strftime(FILE_STAMP_FORMAT)}"
+        candidate = directory / f"{stem}.png"
+        n = 2
+        while True:
+            try:
+                with candidate.open("xb") as stream:
+                    stream.write(data)
+                break
+            except FileExistsError:
+                candidate = directory / f"{stem}_{n}.png"
+                n += 1
+        logger.info("Скриншот сохранён: %s (%d KB)", candidate, len(data) // 1024)
+        return candidate
+
+    def _ensure_session_locked(self, now: datetime | None = None) -> Path:
+        now = now or datetime.now()
         if self._layout == "monthly":
             month_key = now.strftime(MONTHLY_DIR_FORMAT)
             # авто-переход на новый месяц для долгоживущего процесса

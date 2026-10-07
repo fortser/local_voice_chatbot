@@ -1,0 +1,7 @@
+@echo off
+#set HTTP_PROXY=http://LG11493:PS09228@159.255.38.108:8080
+#set HTTPS_PROXY=http://LG11493:PS09228@159.255.38.108:8080
+set HTTP_PROXY=http://127.0.0.1:10808
+set HTTPS_PROXY=http://127.0.0.1:10808
+# NO_PROXY=localhost,127.0.0.1,::1
+wt cmd /k pi

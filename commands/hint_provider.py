@@ -66,6 +66,34 @@ def _registry_defaults(registry: CommandRegistry) -> dict[str, HintLine]:
     return out
 
 
+def _apply_command_hint_metadata(
+    by_name: dict[str, HintLine],
+    registry: CommandRegistry,
+) -> None:
+    """Apply optional metadata injected by voice_commands.toml."""
+    for idx, cmd in enumerate(registry):
+        hint_show = getattr(cmd, "_hint_show", None)
+        if hint_show is False:
+            by_name.pop(cmd.name, None)
+            continue
+        if cmd.name not in by_name:
+            if hint_show is not True:
+                continue
+            by_name[cmd.name] = HintLine(
+                command=cmd.name,
+                label=_auto_label(cmd.synonyms),
+                order=10_000 + idx,
+            )
+        label = getattr(cmd, "_hint_label", None)
+        order = getattr(cmd, "_hint_order", None)
+        current = by_name[cmd.name]
+        by_name[cmd.name] = HintLine(
+            command=cmd.name,
+            label=label.strip() if isinstance(label, str) and label.strip() else current.label,
+            order=order if isinstance(order, int) else current.order,
+        )
+
+
 def _parse_json(path: Path) -> list[dict]:
     """Возвращает items[] из JSON-файла или [] при любой ошибке."""
     try:
@@ -134,6 +162,9 @@ def load_hint_lines(
             "wake_hints: %d команд нет в %s, добавлены авто-дефолтами: %s",
             len(missing), path, sorted(missing),
         )
+
+    # TOML voice-command metadata has final priority over legacy wake_hints.json.
+    _apply_command_hint_metadata(by_name, registry)
 
     ordered = sorted(by_name.values(), key=lambda h: (h.order, h.label))
     if max_items > 0:

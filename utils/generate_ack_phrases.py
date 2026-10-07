@@ -68,6 +68,13 @@ ACK_PHRASES: dict[str, dict[str, str]] = {
     # INSTANT — перевод видео в Яндекс.Браузере
     "translate_video": {"after": "включаю перевод",
                         "fail":  "не получилось включить перевод"},
+    "subscribe_channel": {
+        "after": "подписалась на канал",
+        "already": "вы уже подписаны на этот канал",
+        "not_found": "не нашла кнопку подписки. Откройте её под видео",
+        "unconfirmed": "не удалось подтвердить подписку",
+        "fail": "не получилось подписаться на канал",
+    },
     # GLOBAL
     "stop":          {"after":  "остановилась"},
     "cancel":        {"after":  "отменила"},
@@ -84,10 +91,10 @@ def _enumerate_targets() -> list[tuple[str, str, str]]:
     out: list[tuple[str, str, str]] = []
     for cmd, phases in ACK_PHRASES.items():
         for phase, text in phases.items():
-            if phase not in ("before", "after", "fail"):
+            if phase not in ("before", "after", "fail", "already", "not_found", "unconfirmed"):
                 raise ValueError(
                     f"Unknown phase {phase!r} for command {cmd!r}; "
-                    "expected 'before', 'after' or 'fail'"
+                    "expected a supported acknowledgement phase"
                 )
             out.append((cmd, phase, text))
     return out

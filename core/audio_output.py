@@ -17,6 +17,7 @@ import sounddevice as sd
 import soundfile as sf
 
 from utils.errors import AudioError, CancelledError
+from utils.audio_devices import wasapi_extra_settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,14 @@ class AudioPlayer:
     """Plays WAV files synchronously via the system default output device."""
 
     def __init__(self, device: int | str | None = None) -> None:
+        self._device = device
+
+    @property
+    def device(self) -> int | str | None:
+        return self._device
+
+    def set_device(self, device: int | str | None) -> None:
+        """Set the next playback endpoint, under the pipeline lock."""
         self._device = device
 
     def play_file(
@@ -52,7 +61,8 @@ class AudioPlayer:
         logger.info("Playing %s (%.2fs @ %d Hz)", p.name, duration, sr)
 
         try:
-            sd.play(data, samplerate=sr, device=self._device)
+            sd.play(data, samplerate=sr, device=self._device,
+                    extra_settings=wasapi_extra_settings(self._device))
             if blocking:
                 self._wait(cancel_event)
         except CancelledError:
@@ -72,7 +82,8 @@ class AudioPlayer:
             logger.warning("play_array called with empty buffer")
             return
         try:
-            sd.play(samples, samplerate=sample_rate, device=self._device)
+            sd.play(samples, samplerate=sample_rate, device=self._device,
+                    extra_settings=wasapi_extra_settings(self._device))
             if blocking:
                 self._wait(cancel_event)
         except CancelledError:

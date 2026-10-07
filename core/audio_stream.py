@@ -27,6 +27,7 @@ import sounddevice as sd
 
 from config import CHANNELS, CHUNK_SIZE, NOISE_HISTORY_SIZE, SAMPLE_RATE
 from utils.errors import AudioError
+from utils.audio_devices import wasapi_extra_settings
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +88,13 @@ class AudioStream:
                 dtype="int16",
                 blocksize=self._chunk_size,
                 device=self._device,
+                extra_settings=wasapi_extra_settings(self._device),
             )
             self._stream.start()
         except Exception as exc:
+            if self._stream is not None:
+                self._stream.close()
+                self._stream = None
             raise AudioError(f"Failed to open microphone: {exc}") from exc
 
         self._running = True
@@ -106,8 +111,15 @@ class AudioStream:
 
     def stop(self) -> None:
         self._running = False
+        if self._stream is not None:
+            try:
+                self._stream.abort()
+            except Exception:
+                logger.debug("Microphone abort failed", exc_info=True)
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                raise AudioError("Поток микрофона не остановился; переключение отменено")
             self._thread = None
         if self._stream is not None:
             try:
@@ -117,6 +129,24 @@ class AudioStream:
                 logger.exception("Error while closing mic stream")
             self._stream = None
         logger.info("AudioStream stopped")
+
+    @property
+    def device(self) -> int | str | None:
+        return self._device
+
+    def set_device(self, device: int | str | None) -> None:
+        """Configure a stopped stream; the pipeline owns the lifecycle lock."""
+        if self._thread is not None or self._stream is not None:
+            raise AudioError("Перед сменой устройства остановите аудиопоток")
+        self._device = device
+        with self._lock:
+            self._current_rms = 0.0
+            self._noise_history.clear()
+            self._noise_floor_rms = 0.0
+            self._recording = False
+            self._speech_active = False
+        self._drain_queue(self._chunk_queue)
+        self._drain_queue(self._level_queue)
 
     def __enter__(self) -> "AudioStream":
         self.start()
@@ -191,7 +221,8 @@ class AudioStream:
                 samples = np.frombuffer(bytes(raw), dtype=np.int16)
                 rms = _compute_rms_int16(samples)
             except Exception:
-                logger.exception("AudioStream read failed; terminating loop")
+                if self._running:
+                    logger.exception("AudioStream read failed; terminating loop")
                 break
 
             with self._lock:
@@ -229,6 +260,8 @@ class AudioStream:
                 except queue.Full:
                     # chunk_queue is unbounded by construction, but guard anyway.
                     pass
+
+        self._running = False
 
     @staticmethod
     def _drain_queue(q: "queue.Queue") -> None:

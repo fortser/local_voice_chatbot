@@ -122,6 +122,8 @@ COMMAND_LLM_FALLBACK = settings.commands.llm_fallback
 COMMAND_VERBOSE_ACK = settings.commands.verbose_ack
 NOTE_FAST_PATH_MIN_WORDS = settings.commands.note_fast_path_min_words
 QUESTION_FAST_PATH_MIN_WORDS = settings.commands.question_fast_path_min_words
+COMMANDS_STRICT_CONFIG = settings.commands.strict_config
+COMMANDS_ALLOW_DISABLE_GLOBAL = settings.commands.allow_disable_global
 
 # ====== Диктовка ======
 DICTATE_PAUSE_THRESHOLD = settings.dictate.pause_threshold
@@ -161,6 +163,7 @@ WAKE_HINT_SHADOW_BLUR = settings.ui.wake_hint.shadow_blur
 WAKE_HINT_BACKDROP_ENABLED = settings.ui.wake_hint.backdrop_enabled
 WAKE_HINT_BACKDROP_COLOR = settings.ui.wake_hint.backdrop_color
 WAKE_HINTS_FILE = settings.paths.wake_hints_file
+VOICE_COMMANDS_FILE = settings.paths.voice_commands_file
 
 # ====== Напоминания ======
 NUM_TO_WORDS_BACKEND = settings.reminders.num_to_words_backend

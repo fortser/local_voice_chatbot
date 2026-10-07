@@ -20,6 +20,7 @@ from __future__ import annotations
 import gc
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from config import (
     WHISPER_LANGUAGE,
     WHISPER_MODEL_SIZE,
 )
-from core.base import STTProvider
+from core.base import STTProvider, model_device
 from utils.errors import STTError
 
 # Whisper expects audio at this rate. Anything else gets resampled by us.
@@ -110,6 +111,14 @@ class WhisperSTT(STTProvider):
 
     # ---- STTProvider ----
 
+    @property
+    def model_name(self) -> str:
+        return self._model_size
+
+    @property
+    def device(self) -> str:
+        return model_device(self._model, self._device)
+
     def load_model(self) -> None:
         if self._model is not None:
             logger.debug("Whisper already loaded, skipping")
@@ -123,6 +132,23 @@ class WhisperSTT(STTProvider):
             raise STTError(
                 "openai-whisper is not installed — run `pip install -r requirements.txt`"
             ) from exc
+
+        if str(self._device).split(":", 1)[0].lower() == "cuda":
+            import torch
+
+            if not torch.cuda.is_available():
+                reason = (
+                    "Установлена сборка PyTorch без поддержки CUDA."
+                    if torch.version.cuda is None
+                    else "PyTorch поддерживает CUDA, но видеокарта недоступна. Проверьте драйвер NVIDIA."
+                )
+                raise STTError(
+                    f"Whisper настроен на {self._device}, но CUDA недоступна. {reason} "
+                    f"Python: {sys.executable}. PyTorch: {torch.__version__}. "
+                    "Для работы на NVIDIA установите CUDA-сборку PyTorch в этот Python. "
+                    'Для работы на процессоре задайте whisper_device = "cpu" '
+                    "в секции [stt] файла settings.toml."
+                )
 
         logger.info(
             "Loading Whisper %s on %s (VRAM before: %s)",
@@ -192,7 +218,6 @@ class WhisperSTT(STTProvider):
         if self._model is None:
             return
         logger.info("Unloading Whisper (VRAM before: %s)", _vram_snapshot())
-        del self._model
         self._model = None
         gc.collect()
         try:

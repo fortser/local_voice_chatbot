@@ -61,7 +61,7 @@ pystray>=0.19,<1          # системный трей (Windows/macOS/Linux)
 Pillow>=10.0              # генерация PNG-иконки для трея
 pynput>=1.7,<2            # глобальная hotkey без прав администратора
 
-# --- Screen automation (TranslateVideoCommand) ---
+# --- Screen automation (TranslateVideoCommand, SubscribeChannelCommand) ---
 # Нужны для эмуляции клика по кнопке «Перевести и озвучить» в плеере
 # YouTube. opencv-python — для параметра confidence в locateOnScreen
 # (без него pyautogui требует пиксель-в-пиксель совпадения).
@@ -73,6 +73,9 @@ opencv-python>=4.8,<5
 # подтверждения напоминания. Переключается `NUM_TO_WORDS_BACKEND` в
 # config.py. Ручной бэкенд (по умолчанию) работает без этой зависимости.
 num2words>=0.5,<0.6
+
+# --- NVIDIA telemetry (Modern UI; gracefully unavailable without a driver) ---
+nvidia-ml-py>=12,<14
 
 # --- Testing ---
 pytest==8.3.3

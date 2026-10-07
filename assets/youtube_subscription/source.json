@@ -1,0 +1,10 @@
+{
+  "url": "https://www.youtube.com/watch?v=jfKfPfyJRdk&hl=ru",
+  "viewport": [
+    1920,
+    1080
+  ],
+  "locale": "ru-RU",
+  "subscribed_state": "Existing native notification renderer made visible with local CSS; no account login or subscription requests",
+  "player_controls": "Native fullscreen SVG rendered against black; unavailable stream hides controls in page fixtures"
+}

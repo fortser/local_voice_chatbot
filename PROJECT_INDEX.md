@@ -4,35 +4,47 @@
 
 **Шурочка** — локальный голосовой ассистент для Windows, работающий полностью оффлайн
 на GPU-машине пользователя. Задача — принимать голосовые команды (управление плеером,
-громкостью, заметки, скриншоты, свободные вопросы к LLM) без облачных сервисов и
-отправки звука наружу.
+громкостью, заметки, скриншоты, напоминания, перевод видео, свободные вопросы к LLM)
+без облачных сервисов и отправки звука наружу.
 
 ### Цели и предназначение
 - **Приватность**: все модели (Whisper STT, Silero/XTTS TTS, LLM через Ollama/LM Studio) крутятся локально.
-- **Голосовой контроль системы**: медиа-плееры, громкость, mute сторонних аудио-сессий, скриншоты, диктовка заметок.
+- **Голосовой контроль системы**: медиа-плееры, громкость, mute сторонних аудио-сессий, скриншоты, диктовка заметок, напоминания, перевод видео в Яндекс.Браузере.
 - **Q&A через локальный LLM**: только по явным триггерам («ответь на вопрос», «подскажи», «нужна помощь»), чтобы шум Whisper'а не уходил в модель.
 - **Дежурный режим**: постоянное прослушивание кодового слова «Шурочка» и активация по нему.
 
 ### Функционал и возможности
 - Пайплайн `AudioStream → VAD → STT (Whisper) → CommandRouter → (Command | LLM) → TTS → AudioPlayer`.
 - **Wake-word** активация («Шурочка») с ack-бипом и запасной глобальной hotkey (`Ctrl+Alt+S`).
-- **Команды** (M1–M8): `запиши заметку`, `сделай скриншот`, `пауза/продолжи`, `выключи/включи звук`, `громче/тише`, `следующий/предыдущий трек`, `стоп`, `ответь на вопрос …`.
-- **Сессии**: все заметки и скриншоты складываются в `logs/sessions/YYYY-MM-DD_HH-MM/`.
-- **UI**: Tkinter-окно с уровнем сигнала, индикаторами здоровья подсистем, overlay-виджетом статуса поверх всех окон и иконкой в системном трее.
-- **IPC**: TCP line-JSON сервер (`127.0.0.1:9999`) с методами `health_check`, `generate_only`, `transcribe_and_respond`, `recalibrate` — другие процессы могут разговаривать с тем же инстансом pipeline.
-- **Взаимозаменяемые провайдеры**: Whisper (STT), Ollama/LM Studio (LLM), Silero/XTTS (TTS) — все реализуют ABC из `core/base.py`, переключение через `config.py`.
+- **Команды**: `запиши заметку`, `сделай скриншот`, `пауза/продолжи`, `выключи/включи звук`, `громче/тише`, `следующий/предыдущий трек`, `чуть вперёд/назад`, `переведи видео`, `поставь напоминание …`, `перечисли напоминания`, `закончи работу`, `ответь на вопрос …`.
+- **Пользовательский overlay команд**: `config/voice_commands.toml` (TOML) умеет расширять/заменять синонимы, выключать команды и править метаданные wake-hint подсказки, не трогая Python-код (`commands/voice_config.py`).
+- **Сессии**: заметки и скриншоты складываются в `~/Shura/` (по умолчанию помесячная раскладка `YYYY-MM`, переключается на `per_session` в настройках).
+- **UI**: два бэкенда — легаси Tkinter-окно и новый PySide6-дашборд (`--ui pyside6`, фокус текущего редизайна) с уровнемером, health-индикаторами, панелью аудио-устройств + BT-батарея, overlay-статусом и системным треем.
+- **IPC**: TCP line-JSON сервер (`127.0.0.1:9999`) с методами `health_check`, `generate_only`, `transcribe_and_respond`, `recalibrate`.
+- **Взаимозаменяемые провайдеры**: Whisper (STT), Ollama/LM Studio (LLM), Silero/XTTS (TTS) — все реализуют ABC из `core/base.py`, переключение через настройки.
 - **GPU VRAM swap**: если TTS == XTTS на CUDA, Whisper выгружается на время синтеза и перезагружается после — они не помещаются в VRAM одновременно.
+
+### Конфигурация
+Все тюнинги — в Pydantic-модели `config_model.Settings` (секции paths/audio/vad/stt/llm/tts/
+wake_word/commands/ui/…). Пользовательские правки кладутся в `settings.toml` в корне
+(шаблон — `settings.toml.example`, в репозиторий не коммитится). `config.py` оставлен как
+**shim**: импортирует singleton `settings` и пробрасывает 90 старых module-level констант
+(`WHISPER_MODEL_SIZE`, `OLLAMA_TIMEOUT`, …) для 24 модулей-потребителей. Маппинг — в
+`docs/config_migration_map.md`.
 
 ### Окружение
 Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. LLM-бекенд запускается
 отдельно (Ollama на `:11434` или LM Studio на `:1234`).
 
 ### Точки входа
-- `python main.py` — Tkinter UI (по умолчанию).
+- `python main.py` — новый модульный интерфейс `ui/modern/` (по умолчанию).
+- `python -m ui.modern --preview` — предпросмотр без микрофона и моделей.
+- `python main.py --ui tkinter` — прежний Tkinter UI.
+- `python main.py --mode ui --ui pyside6` — новый PySide6-дашборд.
 - `python main.py --mode console` — REPL + IPC.
-- `python main.py --mode ipc` — headless IPC-сервер.
-- `python check_stage_<N>.py` — поэтапные ручные валидаторы (удаляются после приёмки).
-- `python -m utils.audio_devices` / `python -m utils.tts_speakers` — диагностические CLI.
+- `python main.py --mode ipc` — headless IPC-сервер (`--no-ipc` подавляет сервер).
+- `python -m utils.audio_devices` / `python -m utils.tts_speakers` / `python -m utils.bluetooth_battery` — диагностические CLI.
+- `python -m scripts.dump_voice_commands` / `python -m scripts.command_stats` и др. — служебные скрипты (см. раздел `scripts/`).
 
 ---
 
@@ -42,151 +54,235 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 
 | Файл | Назначение | Ключевые точки входа / выхода |
 |---|---|---|
-| `main.py` | Главный оркестратор. Класс `VoicePipeline` владеет AudioStream, VAD, STT, LLM, TTS, AudioPlayer, SessionManager, MuteController, CommandRouter, WakeWordListener. Один `threading.Lock` сериализует доступ к микрофону/моделям из REPL, IPC и wake-word listener. Содержит CLI-парсер (`--mode console/ipc/ui`, `--no-ipc`) и fallback-фразы. Использует: `argparse`, `threading`, `bootstrap.bootstrap`, `commands.*`, `core.*`, `ipc.*`, `system.*`. | Вход: `main()` / импортирует `VoicePipeline`. Выход: синтезированный WAV в динамики + файлы в `logs/sessions/`. |
-| `bootstrap.py` | Однократная инициализация для всех entry points: форсит UTF-8 stdout, поднимает `logging_config.setup_logging()`, печатает текущие Windows-дефолты аудио-устройств. Использует `utils.audio_devices.get_current_devices`, `logging_config.setup_logging`. | Функция `bootstrap(verbose=True) → BootstrapResult`. |
-| `config.py` | Централизованные настройки: пути, sample-rate, VAD-пороги, `WHISPER_MODEL_SIZE`, `LLM_PROVIDER`, `TTS_PROVIDER`, системный промпт, wake-word + алиасы, таймауты диктовки/дежурки, параметры бипов, ACK-фразы команд, overlay/tray-hotkey. Только константы, импортов кода нет. | Экспортирует константы. |
-| `logging_config.py` | `setup_logging()` — идемпотентный конфиг: ротируемый файловый хендлер (`logs/voice_ai.log`, 5 МБ × 3) + консольный; отдельный logger `unrecognized` → `logs/unrecognized.log`. Использует `logging`, `logging.handlers.RotatingFileHandler`. | Функция `setup_logging()`. |
-| `requirements.txt` | Список pip-зависимостей: `openai-whisper`, `silero`, `TTS` (Coqui XTTS), `pydantic`, `sounddevice`, `soundfile`, `numpy`, `torch`, `pycaw`, `comtypes`, `mss`, `pillow`, `pystray`, `pynput` и пр. | — |
+| `main.py` | Главный оркестратор. Класс `VoicePipeline` владеет AudioStream, VAD, STT, LLM, TTS, AudioPlayer, SessionManager, MuteController, CommandRouter, WakeWordListener, ReminderScheduler. Один `threading.Lock` сериализует доступ к микрофону/моделям из REPL, IPC и wake-word listener. Реестр команд строится через `build_configured_registry()` (с учётом TOML-overlay). CLI-парсер: `--mode ui/console/ipc`, `--ui tkinter/pyside6`, `--no-ipc`. | Вход: `main()` / импортирует `VoicePipeline`. Выход: синтезированный WAV в динамики + файлы сессии. |
+| `bootstrap.py` | Однократная инициализация для всех entry points: форсит UTF-8 stdout, поднимает `logging_config.setup_logging()`, печатает текущие Windows-дефолты аудио-устройств. | Функция `bootstrap(verbose=True) → BootstrapResult`. |
+| `config.py` | **Shim** над `config_model.Settings`: импортирует singleton `settings = load_settings()` и пробрасывает все старые module-level константы по маппингу `docs/config_migration_map.md`. Read-only зеркало — правки значений идут через `settings.toml` или дефолты в `config_model.py`. | Экспортирует ~90 констант. |
+| `config_model.py` | Pydantic-модель конфигурации с делением на секции (`PathsSettings`, `STTSettings`, `LLMSettings`, `WakeHintSettings`, …) + `load_settings()` (дефолты + overrides из `settings.toml`) и `save_settings(diff_only=True)` (пишет только отличия от дефолтов). `extra="forbid"` — опечатка в TOML падает на валидации. | `Settings`, `load_settings`, `save_settings`, `SETTINGS_TOML_PATH`. |
+| `logging_config.py` | `setup_logging()` — идемпотентный конфиг: ротируемый файловый хендлер (`logs/voice_ai.log`) + консольный; отдельные logger'ы `unrecognized` → `logs/unrecognized.log` и распознанные команды → `logs/recognized.log`. | Функция `setup_logging()`. |
+| `requirements.txt` | pip-зависимости: `openai-whisper`, `silero`, `TTS` (Coqui XTTS), `pydantic`, `tomli`/`tomli_w`, `PySide6`, `sounddevice`, `soundfile`, `numpy`, `torch`, `pycaw`, `comtypes`, `mss`, `pillow`, `pystray`, `pynput`, `pyautogui` и пр. | — |
+| `settings.toml.example` | Шаблон пользовательских настроек: закомментированные поля по секциям. Копируется в `settings.toml` (не коммитится). | — |
 | `CLAUDE.md` | Инструкции для Claude Code по проекту. | — |
-| `MIGRATION_PLAN.md` | План миграции M1–M8 (команды, wake-word, UI overlay). | — |
-| `VOICE_AI_PROJECT_SPECIFICATION.md` | Исходная спецификация этапов 0–8. | — |
-| `check_stage_5.py` | Ручная приёмка Этапа 5 (pipeline STT→LLM→TTS в консоли). | CLI-скрипт. |
-| `check_stage_6.py` | Ручная приёмка Этапа 6 (IPC-сервер + 4 метода API + негативные кейсы). | CLI-скрипт. |
-| `check_stage_7.py` | Ручная приёмка Этапа 7 (Tkinter UI с диагностикой). | CLI-скрипт. |
-| `check_stage_8.py` | Ручная приёмка Этапа 8 (wake-word «Шурочка» + дежурный режим). | CLI-скрипт. |
-| `check_stage_m4.py` | Приёмка M4: pause/resume (media keys), mute/unmute (pycaw per-session), volume up/down. | CLI-скрипт. |
-| `check_stage_m6.py` | Приёмка M6: Stop (голос), Seek next/prev track, Cancel (Esc). | CLI-скрипт. |
-| `check_stage_m8.py` | Приёмка M8: overlay-виджет, systray, глобальная hotkey возврата в дежурку. | CLI-скрипт. |
+| `CHANGELOG.md` | Хронология изменений (Keep-a-Changelog), активная секция `[Unreleased]`. | — |
+| `README.md` | GitHub-витрина, обновляется вручную перед push. | — |
+| `soft-sniffing-allen.md` | План редизайна UI (этапы 1–8 миграции config + PySide6-дашборд). | — |
+| `LLM_report.md` | Сгенерированный отчёт по LLM. | — |
 | `claude_start.bat` / `go.bat` / `gitpush.bat` / `ЯMake_llm_report.bat` | Локальные BAT-лаунчеры. | — |
 | `Полный список голосовых команд.txt`, `новые фичи.txt`, `список пожеланий.txt`, `гитхаб.txt` | Заметки/TODO пользователя. | — |
+
+> **Примечание:** `check_stage_<N>.py` (этапы 5–8, M4/M6/M8) удалены после ручной приёмки — стейджи приняты. Дорожная карта и спецификация переехали в `docs/` (`docs/MIGRATION_PLAN.md`, `docs/VOICE_AI_PROJECT_SPECIFICATION.md`).
 
 ### `core/` — подсистемы пайплайна
 
 | Файл | Назначение | Ключевые символы / библиотеки |
 |---|---|---|
-| `core/__init__.py` | Фабрики провайдеров: `create_stt_provider()`, `create_llm_provider()`, `create_tts_provider()` читают `config` и выбирают нужный класс из `_STT_FACTORIES / _LLM_FACTORIES / _TTS_FACTORIES`. | Экспорт: 3 фабрики + ABC из `core.base`. |
+| `core/__init__.py` | Фабрики провайдеров: `create_stt_provider()`, `create_llm_provider()`, `create_tts_provider()` читают `config` и выбирают нужный класс. | Экспорт: 3 фабрики + ABC из `core.base`. |
 | `core/base.py` | ABC для инверсии управления: `STTProvider`, `LLMProvider`, `TTSProvider`. | `abc.ABC`, `abstractmethod`. |
-| `core/audio_stream.py` | `AudioStream` — фоновый микрофонный reader на `sounddevice`. Считает per-chunk RMS (int16), держит скользящий `noise_floor`, выдаёт `(rms, percent)` в bounded queue для UI и в callback; `chunk_queue` питает VAD. | `sounddevice.InputStream`, `queue.Queue`, `threading.Thread`, `numpy`. |
-| `core/vad.py` | `VoiceActivityDetector` — `calibrate()` (макс RMS × 1.8, пол `MIN_ENERGY_THRESHOLD`), `record_until_silence()` (пишет WAV до паузы `PAUSE_THRESHOLD`). Адаптивный drift порога к шуму. | `numpy`, `wave`; потребляет `AudioStream.chunk_queue`. |
-| `core/stt.py` | `WhisperSTT` — `load_model()` / `transcribe(path)` / `unload_model()`. Язык зашит в `config.WHISPER_LANGUAGE`. После unload — `gc.collect()` + `torch.cuda.empty_cache()`. | `openai-whisper`, `torch`. |
-| `core/llm.py` | `OllamaLLM(LLMProvider)` — обёртка над `OllamaClient`: авто-детект thinking-моделей (3× токенов, расширенный timeout), `generate()` пропускает результат через `clean_llm_response()` (снимает `<think>` / harmony-теги). | `core.ollama_client`, `core.prompt_manager`. |
-| `core/llm_errors.py` | Единая таксономия `LLMErrorKind` для Ollama + LM Studio. `classify_http_error()` решает что ретраить (`TIMEOUT`, `RATE_LIMIT`). | `enum.Enum`, `requests.exceptions`. |
-| `core/ollama_client.py` | HTTP-клиент Ollama: `generate()`, `list_models()`, `is_running()`. Retry с backoff `delay*(attempt+2)`. | `requests`, `core.llm_errors`. |
+| `core/audio_stream.py` | `AudioStream` — фоновый микрофонный reader на `sounddevice`. Считает per-chunk RMS (int16), держит скользящий `noise_floor`, выдаёт `(rms, percent)` в bounded queue для UI; `chunk_queue` питает VAD. | `sounddevice.InputStream`, `queue.Queue`, `numpy`. |
+| `core/vad.py` | `VoiceActivityDetector` — `calibrate()`, `record_until_silence()`. Адаптивный drift порога к шуму. | `numpy`, `wave`. |
+| `core/stt.py` | `WhisperSTT` — `load_model()` / `transcribe(path)` / `unload_model()`. После unload — `gc.collect()` + `torch.cuda.empty_cache()`. | `openai-whisper`, `torch`. |
+| `core/llm.py` | `OllamaLLM(LLMProvider)` — авто-детект thinking-моделей (3× токенов), `generate()` чистит результат через `clean_llm_response()`. | `core.ollama_client`, `core.prompt_manager`. |
+| `core/llm_errors.py` | Таксономия `LLMErrorKind` для Ollama + LM Studio. `classify_http_error()`. | `enum.Enum`, `requests.exceptions`. |
+| `core/ollama_client.py` | HTTP-клиент Ollama: `generate()`, `list_models()`, `is_running()`. Retry с backoff. | `requests`, `core.llm_errors`. |
 | `core/lmstudio_client.py` | Backend LM Studio (OpenAI-compatible REST). `LMStudioLLM` симметричен `OllamaLLM`. | `requests`, `core.llm_errors`, `core.prompt_manager`. |
-| `core/tts.py` | `XTTSProvider(TTSProvider)` — Coqui XTTS-v2 zero-shot voice clone. Lazy-import `TTS.api`, `COQUI_TOS_AGREED=1`. | `TTS.api.TTS`, `torch`, `core.tts_utils`. |
-| `core/silero_tts.py` | `SileroTTS(TTSProvider)` — русская модель Silero v4_ru/v5 через `torch.hub.load`. CPU-friendly, освобождает GPU для Whisper. | `torch`, `torch.hub`, `soundfile`. |
-| `core/tts_utils.py` | Хелперы TTS: резолвинг пути к speaker-WAV (с fail-fast), генерация уникального timestamp-имени выходного WAV. | `pathlib.Path`, `datetime`. |
-| `core/audio_output.py` | `AudioPlayer` — проигрывание WAV / numpy-массива через `sounddevice`, блокирующе до конца. Используется для TTS-ответов и ack-бипов. | `sounddevice.play`, `soundfile.read`, `numpy`. |
-| `core/audio_beep.py` | `generate_beep(freq, duration_ms, sample_rate)` — синусоидальный beep с fade-in/out, float32 [-1,1]. Для wake-word активации / dictate-стартера. | `numpy`. |
-| `core/wake_word.py` | `WakeWordListener` — daemon-поток: окна по 2–3 сек через Whisper, match против `WAKE_WORD` + алиасов, на срабатывание — beep + ack + callback в pipeline. `contains_wake_word()`, `_normalize()` — чистые функции, покрыты тестами. | `threading`, `WhisperSTT`, `core.audio_stream`. |
-| `core/preprocessing.py` | `compute_rms_file()` — файловый RMS для калибровок (int16 domain, совместим с voice_converter.py). Normalisation, resampling — стабы. | `numpy`, `soundfile`. |
-| `core/prompt_manager.py` | `clean_llm_response()` — снимает `<think>…</think>`, harmony-каналы `<|channel|>analysis/final`, freeform `Thinking Process:`. `detect_thinking_markers()` — авто-распознавание thinking-моделей. | `re`. |
+| `core/tts.py` | `XTTSProvider(TTSProvider)` — Coqui XTTS-v2 zero-shot voice clone. | `TTS.api.TTS`, `torch`, `core.tts_utils`. |
+| `core/silero_tts.py` | `SileroTTS(TTSProvider)` — русская модель Silero через `torch.hub.load`. CPU-friendly. | `torch`, `torch.hub`, `soundfile`. |
+| `core/tts_utils.py` | Хелперы TTS: резолвинг пути к speaker-WAV, генерация уникального имени выходного WAV. | `pathlib.Path`, `datetime`. |
+| `core/audio_output.py` | `AudioPlayer` — проигрывание WAV / numpy-массива через `sounddevice`, блокирующе до конца. | `sounddevice.play`, `soundfile.read`. |
+| `core/audio_beep.py` | `generate_beep()` — синусоидальный beep с fade-in/out. Для wake-word / dictate-стартера. | `numpy`. |
+| `core/wake_word.py` | `WakeWordListener` — daemon-поток: окна по 2–4 сек через Whisper, match против `WAKE_WORD` + алиасов, на срабатывание — beep + ack + callback. `contains_wake_word()`, `_normalize()` — чистые функции, покрыты тестами. | `threading`, `WhisperSTT`, `core.audio_stream`. |
+| `core/preprocessing.py` | `compute_rms_file()` — файловый RMS для калибровок (int16 domain). | `numpy`, `soundfile`. |
+| `core/prompt_manager.py` | `clean_llm_response()` — снимает `<think>`, harmony-каналы, `Thinking Process:`. `detect_thinking_markers()`. | `re`. |
 
 ### `core/reminders/` — подсистема напоминаний (M10)
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
-| `core/reminders/__init__.py` | Публичный фасад пакета: реэкспортирует `parse_reminder_tail`, `ReminderScheduler`, `ReminderStorage`. | — |
-| `core/reminders/parser.py` | Regex-парсер хвоста команды «напомни через N минут/часов …». Возвращает `(count, unit, text)`. Не-regex формы («через полчаса», «в 15:30») осознанно не поддерживаются. | `re`, `commands.router.normalize`. |
-| `core/reminders/storage.py` | JSON-персистентность списка напоминаний: атомарная запись через tmp-файл + `os.replace`. Поле `fire_at` — абсолютный POSIX timestamp. Метод `list_active()` возвращает все записи из файла. | `json`, `pathlib`. |
-| `core/reminders/scheduler.py` | `ReminderScheduler` — `threading.Timer` на каждое активное напоминание. При срабатывании вызывает `fire_callback(text)` под pipeline-lock'ом (блокируется, если идёт другой турн). Просроченные напоминания при старте проигрываются по возрастанию `fire_at`. Метод `list_active() -> list[dict]` — отсортированный по `fire_at` срез живых таймеров. | `threading.Timer`, `uuid`, `core.reminders.storage`. |
-| `core/reminders/listing.py` | Форматирование списка активных напоминаний в одну русскую фразу для TTS. Счётчик в нужном падеже, порядковые числительные среднего рода 1–10 + fallback, выбор единицы остатка («менее минуты» / минуты / часы). Используется `ListRemindersCommand`. | `core.reminders.num_to_words`, `core.reminders.num_to_words_manual`. |
-| `core/reminders/num_to_words.py` | Фабрика конвертера чисел в слова: переключается через `config.NUM_TO_WORDS_BACKEND` между ручным словарём (`"manual"`) и библиотекой `num2words` (`"num2words"`). | `config.NUM_TO_WORDS_BACKEND`. |
-| `core/reminders/num_to_words_manual.py` | Ручной конвертер 1–999 в русские слова + функция `plural_form()` для склонения единиц (минута/час/секунда). Без внешних зависимостей. | `_number_to_words()`, `plural_form()`. |
-| `core/reminders/num_to_words_external.py` | Обёртка над библиотекой `num2words` — альтернатива `num_to_words_manual` для расширенного диапазона. Активируется при `NUM_TO_WORDS_BACKEND="num2words"`. | `num2words`. |
+| `core/reminders/__init__.py` | Публичный фасад: реэкспорт `parse_reminder_tail`, `ReminderScheduler`, `ReminderStorage`. | — |
+| `core/reminders/parser.py` | Regex-парсер хвоста «напомни через N минут/часов …». Возвращает `(count, unit, text)`. | `re`, `commands.router.normalize`. |
+| `core/reminders/storage.py` | JSON-персистентность напоминаний: атомарная запись tmp → `os.replace`. Поле `fire_at` — POSIX timestamp. | `json`, `pathlib`. |
+| `core/reminders/scheduler.py` | `ReminderScheduler` — `threading.Timer` на каждое активное напоминание, `fire_callback(text)` под pipeline-lock'ом. Просроченные при старте проигрываются по возрастанию `fire_at`. `list_active() -> list[dict]`. | `threading.Timer`, `uuid`. |
+| `core/reminders/listing.py` | Форматирование списка напоминаний в одну русскую фразу для TTS (склонения, порядковые, остаток времени). Используется `ListRemindersCommand`. | `core.reminders.num_to_words*`. |
+| `core/reminders/num_to_words.py` | Фабрика конвертера чисел в слова: `"manual"` или `"num2words"` по `config.NUM_TO_WORDS_BACKEND`. | — |
+| `core/reminders/num_to_words_manual.py` | Ручной конвертер 1–999 в русские слова + `plural_form()`. Без зависимостей. | `_number_to_words()`, `plural_form()`. |
+| `core/reminders/num_to_words_external.py` | Обёртка над `num2words` для расширенного диапазона. | `num2words`. |
 
-### `commands/` — голосовые команды (M1–M6)
+### `commands/` — голосовые команды
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
-| `commands/__init__.py` | Публичный фасад: `BaseCommand`, `CommandType`, `CommandContext`, `CommandRouter`, `CommandRegistry`, `build_default_registry()`. | Реэкспорт. |
-| `commands/base.py` | `BaseCommand` ABC (`name`, `synonyms`, `type`, `execute(ctx, tail)`). `CommandType` enum (INSTANT / DICTATE / LLM). `CommandContext` — DTO с ссылками на pipeline, session_manager, mute_controller и т.д. | `abc.ABC`, `dataclass`. |
-| `commands/router.py` | `CommandRouter.match(text)` — нормализация (lower, `ё→е`, пунктуация, whitespace), сопоставление по синонимам по убыванию длины, exact или `prefix + " "`. | Чистый текстовый матчер. |
-| `commands/registry.py` | `CommandRegistry` (name→instance) + `build_default_registry(ctx_factory)` — собирает все команды; single words отфильтровываются (anti-false-positive защита). | Iterable protocol. |
-| `commands/note_command.py` | `NoteCommand` — «запиши заметку …». Fast path (≥N слов после триггера) или dictation через `pipeline.dictate()`. Пишет в `session_manager.save_note()`. | `CommandType.DICTATE`. |
-| `commands/screenshot_command.py` | `ScreenshotCommand` — «сделай скриншот». INSTANT. Зовёт `system.screenshot.take_screenshot()` + `session_manager.save_screenshot()`. | `CommandType.INSTANT`. |
-| `commands/question_command.py` | `QuestionCommand` — единственный легитимный путь к LLM. Триггеры: «ответь на вопрос», «подскажи», «нужна помощь». Fast path или dictation. | `CommandType.LLM`. |
-| `commands/player_commands.py` | `PlayPauseCommand`, `MuteCommand`, `UnmuteCommand`, `VolumeUpCommand`, `VolumeDownCommand` — обёртки над `system.media_keys` и `system.audio_session_mute.MuteController`. | `VK_MEDIA_*`, pycaw. |
-| `commands/stubs.py` | `CancelCommand` (Esc через hotkey, не голосом — защита от ложных срабатываний), `StopCommand` (выключает wake listener), `SeekForward/Backward` (VK_MEDIA_NEXT/PREV_TRACK). | `system.media_keys`. |
-| `commands/list_reminders_command.py` | `ListRemindersCommand` — INSTANT-команда «перечисли напоминания». Читает активные таймеры из `ReminderScheduler.list_active()`, собирает одну русскую фразу через `core.reminders.listing.format_reminders_list()` и произносит её одним TTS-проходом без LLM. Синонимы: «перечисли напоминания/уведомления», «какие напоминания/уведомления», «список напоминаний/уведомлений». | `CommandType.INSTANT`; `core.reminders.listing`, `core.reminders.scheduler`. |
-| `commands/translate_video_command.py` | `TranslateVideoCommand` — INSTANT-команда «переведи видео»: эмулирует клик по кнопке «Перевести и озвучить» в панели Яндекс.Браузера поверх YouTube-плеера. Алгоритм: паркует курсор в верхнюю треть экрана, ждёт появления панели (400 мс), ищет шаблон `assets/yandex_translate_icon.png` через `pyautogui.locateOnScreen` (`confidence=0.8`), кликает и возвращает курсор. Окно браузера не активирует. Retry-бюджет динамически считается от конфига `WakeHintOverlay` (минимум 4, при hold=3500 мс — 12 попыток). `ack_after = None`; ack проигрывается вручную через `pipeline._play_ack()` — отдельные WAV для успеха и неудачи. Синонимы: «переведи видео», «переводи видео», «переведи на русский», «включи перевод», «русский перевод». | `CommandType.INSTANT`; `pyautogui` (lazy-import), `config.WAKE_HINT_*_MS`, `BASE_DIR`. WAV-ключи: `translate_video_after.wav`, `translate_video_fail.wav`. |
+| `commands/__init__.py` | Публичный фасад: `BaseCommand`, `CommandType`, `CommandContext`, `TurnStats`, `CommandRouter`, `CommandRegistry`, `build_default_registry()`, `build_configured_registry()`. | Реэкспорт. |
+| `commands/base.py` | `BaseCommand` ABC (`name`, `synonyms`, `command_type`, `ack_before`/`ack_after`, `execute(ctx)`). `CommandType` enum: **GLOBAL** (Stop/Cancel, проверяется первым), **INSTANT** (fire-and-forget), **CONTENT** (нужно тело после триггера — Note/Question/Reminder), **COMPOSITE**. `CommandContext` — DTO. `TurnStats` — накопитель метрик хода (STT/LLM/TTS ms, токены) для UI. | `abc.ABC`, `dataclass`, `Enum`. |
+| `commands/router.py` | `CommandRouter.match(text)` — нормализация (`normalize()`: lower, `ё→е`, пунктуация, whitespace) + сопоставление по синонимам по убыванию длины. | Чистый текстовый матчер. |
+| `commands/registry.py` | `CommandRegistry` (name→instance, инвариант «≥2 слов»). `build_default_registry()` — встроенные команды. `build_configured_registry(config_path, strict, allow_disable_global)` — применяет TOML-overlay через `commands.voice_config`; при невалидном конфиге и `strict=False` откатывается на дефолты. | Iterable protocol. |
+| `commands/voice_config.py` | Загрузка/применение пользовательского TOML-overlay (`config/voice_commands.toml`). Pydantic-схемы `VoiceCommandsConfig`/`CommandOverride` (`extra="forbid"`). `apply_voice_commands_config()` — merge синонимов (`extend`/`replace`, инвариант «≥2 слов», запрет дублей внутри и между командами), disable (GLOBAL — только при `allow_disable_global`), инъекция hint-метаданных (`_hint_label`/`_hint_show`/`_hint_order`). Ошибки → `VoiceCommandConfigError`. | `tomllib`/`tomli`, `pydantic`. |
+| `commands/hint_provider.py` | Источник списка для wake-hint оверлея. Базис — авто-генерация из `CommandRegistry` (первый синоним каждой команды); перекрывается легаси `config/wake_hints.json` (label/show/order) и затем — приоритетно — метаданными из `voice_commands.toml`. `load_hint_lines()` сортирует по order и обрезает по `max_items`. | `json`, `CommandRegistry`. |
+| `commands/note_command.py` | `NoteCommand` — «запиши заметку …» (CONTENT). Fast path (≥N слов после триггера) или dictation. Пишет TXT; при `notes.html_with_screenshot` снимает экран до диктовки и дополняет месячный HTML-журнал. | `CommandType.CONTENT`, `SessionManager`. |
+| `commands/screenshot_command.py` | `ScreenshotCommand` — «сделай скриншот» (INSTANT). `system.screenshot.take_screenshot()` + `session_manager.save_screenshot()`. | `CommandType.INSTANT`. |
+| `commands/question_command.py` | `QuestionCommand` — единственный легитимный путь к LLM (CONTENT). Триггеры: «ответь на вопрос», «подскажи», «нужна помощь». | `CommandType.CONTENT`. |
+| `commands/player_commands.py` | `PauseCommand`, `ResumeCommand` (обе шлют `VK_MEDIA_PLAY_PAUSE` — toggle), `VolumeUpCommand`, `VolumeDownCommand` (мастер-громкость Windows), `MuteCommand`/`UnmuteCommand` (селективный per-session mute через `MuteController`, кроме своей сессии). | `system.media_keys`, pycaw. |
+| `commands/stubs.py` | `StopCommand` (GLOBAL — выключает wake listener, не выход из процесса), `SeekForward/BackwardCommand` (`VK_MEDIA_NEXT/PREV_TRACK` — трек/видео), `SkipForward/BackwardCommand` (`arrow_right/left` в активное окно — ±5 сек на YouTube). Cancel — клавишный (Esc в UI), не голосовой. | `system.media_keys`. |
+| `commands/reminder_command.py` | `ReminderCommand` — «поставь напоминание …» (CONTENT). ack-WAV `reminder_before` → `pipeline.dictate()` → regex-парсер `core.reminders.parser` → `Scheduler.add()` (абсолютный fire_at в JSON + Timer). При неудаче парсинга — голосовая подсказка, LLM не трогается. | `CommandType.CONTENT`; `core.reminders`. |
+| `commands/list_reminders_command.py` | `ListRemindersCommand` — «перечисли напоминания» (INSTANT). Читает активные таймеры из `ReminderScheduler.list_active()`, произносит одну русскую фразу через `core.reminders.listing` без LLM. | `CommandType.INSTANT`. |
+| `commands/translate_video_command.py` | `TranslateVideoCommand` — «переведи видео» (INSTANT): кликает по кнопке «Перевести и озвучить» панели Яндекс.Браузера поверх YouTube. Ищет шаблон `assets/yandex_translate_icon.png` через `pyautogui.locateOnScreen`. ack вручную через `pipeline._play_ack()` — отдельные WAV для успеха и неудачи. | `CommandType.INSTANT`; `pyautogui` (lazy). WAV: `translate_video_after.wav`, `translate_video_fail.wav`. |
+
+Голосовая подписка: `commands/subscribe_channel_command.py` — команда
+`subscribe_channel` («подпишись на канал», INSTANT). `system/youtube_subscription.py`
+проверяет активный Яндекс.Браузер, ищет кнопки на основном мониторе и
+проверяет изменение состояния. Шаблоны — `assets/youtube_subscription/`,
+ответы — `assets/ack/subscribe_channel_*.wav`. Обслуживание и ограничения:
+`docs/subscribe_channel_command.md`; автотесты — `tests/test_subscribe_channel.py`.
 
 ### `ipc/` — inter-process API
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
 | `ipc/__init__.py` | Публичный фасад: `VoiceAIServer`, `VoiceAIClient`, `ErrorCode`. | — |
-| `ipc/protocol.py` | Фрейминг: один JSON / строку `\n`. `MAX_LINE_BYTES = 1 MiB`. `ErrorCode` enum (UNKNOWN_METHOD, INVALID_PARAMS, INTERNAL_ERROR, PIPELINE_BUSY …). | `json`, `enum`. |
-| `ipc/schemas.py` | Pydantic-схемы запросов/ответов. Envelope: `{id, method, params}` / `{id, status, result|error}`. Per-method param-классы (`GenerateOnlyParams`, `TranscribeAndRespondParams`, …). | `pydantic.BaseModel`. |
-| `ipc/server.py` | `VoiceAIServer(ThreadingTCPServer)` — один поток на соединение, обработчики берут `pipeline.lock`, один request / соединение. 4 метода: `health_check`, `generate_only`, `transcribe_and_respond`, `recalibrate`. | `socketserver.ThreadingTCPServer`. |
-| `ipc/client.py` | `VoiceAIClient` — blocking sync TCP-клиент, connection-per-call. `IPCError` с `code` от сервера. | `socket`. |
+| `ipc/protocol.py` | Фрейминг: один JSON / строку `\n`. `MAX_LINE_BYTES = 1 MiB`. `ErrorCode` enum. | `json`, `enum`. |
+| `ipc/schemas.py` | Pydantic-схемы запросов/ответов. Envelope `{id, method, params}` / `{id, status, result|error}`. | `pydantic.BaseModel`. |
+| `ipc/server.py` | `VoiceAIServer(ThreadingTCPServer)` — один поток на соединение, обработчики берут `pipeline.lock`. Методы: `health_check`, `generate_only`, `transcribe_and_respond`, `recalibrate`. | `socketserver.ThreadingTCPServer`. |
+| `ipc/client.py` | `VoiceAIClient` — blocking sync TCP-клиент, connection-per-call. `IPCError` с `code`. | `socket`. |
 
-### `ui/` — Tkinter-интерфейс
+### `ui/` — пользовательские интерфейсы
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
 | `ui/__init__.py` | Пустой. | — |
-| `ui/tkinter_ui.py` | `VoiceAIApp` — главное окно (Этап 7). Владеет `VoicePipeline` на worker thread, UI в main thread. Кнопки «🎤 Слушай», «🔄 Перекалибровать», «🛌 Дежурный», уровнемер RMS с маркерами шума/порога, health pills (Whisper/LLM/TTS), лог-вьюер. `run_ui()` — entry point. | `tkinter`, `tkinter.ttk`, `threading`. |
-| `ui/overlay.py` | `Overlay` — полупрозрачный `tk.Toplevel` поверх всех окон (статус Пассивен / Слышу / Говорите / Обрабатываю / Отвечаю). Click-through на Windows через `WS_EX_TRANSPARENT | WS_EX_LAYERED` (ctypes user32). | `tkinter.Toplevel`, `ctypes`. |
-| `ui/tray.py` | `SystemTrayIcon` — `pystray`-иконка в трее (daemon thread). Меню: Включить ассистента / Открыть папку сессии / Выйти. Иконка генерируется `PIL`. | `pystray`, `PIL.Image`. |
-| `ui/hotkey.py` | `HotkeyListener` — глобальная hotkey (`WAKE_HOTKEY`, по умолчанию Ctrl+Alt+S) через `pynput.keyboard.GlobalHotKeys`; включает wake-listener обратно (страховка от голосового StopCommand). | `pynput.keyboard`. |
+| `ui/tkinter_ui.py` | `VoiceAIApp` — легаси Tkinter-окно (Этап 7). Владеет `VoicePipeline` на worker thread, UI в main thread. Кнопки, уровнемер RMS, health pills, лог-вьюер. `run_ui()` — entry point. | `tkinter`, `tkinter.ttk`, `threading`. |
+| `ui/overlay.py` | `Overlay` — полупрозрачный `tk.Toplevel` поверх всех окон (статусы pipeline). Click-through на Windows (ctypes user32). Используется Tkinter-бэкендом. | `tkinter.Toplevel`, `ctypes`. |
+| `ui/tray.py` | `SystemTrayIcon` — `pystray`-иконка в трее (daemon thread). | `pystray`, `PIL.Image`. |
+| `ui/hotkey.py` | `HotkeyListener` — глобальная hotkey (`WAKE_HOTKEY`, Ctrl+Alt+S) через `pynput.keyboard.GlobalHotKeys`; включает wake-listener обратно. | `pynput.keyboard`. |
+
+### `ui/modern/` — новый модульный интерфейс (по умолчанию)
+
+| Файл | Назначение |
+|---|---|
+| `app.py`, `__main__.py` | Запуск нового интерфейса и предпросмотр без ядра. |
+| `window.py` | Оболочка, навигация и расширяемый реестр `PageSpec`. |
+| `pages.py` | Обзор, история с поиском/экспортом, каталог команд, настройки. |
+| `components.py`, `theme.py` | Переиспользуемые компоненты, индикаторы, палитра и QSS. |
+| `backend.py` | Фоновая интеграция с `VoicePipeline`, IPC и wake-word; Qt-сигналы для страниц. |
+| `docs/modern_ui.md` | Архитектура, запуск и пример добавления страницы. |
+| `tests/test_modern_ui.py` | Автоматические проверки UI без микрофона, GPU и LLM. |
+
+### `ui/pyside6/` — прежний дашборд
+
+| Файл | Назначение | Ключевые символы |
+|---|---|---|
+| `ui/pyside6/__init__.py` | Пакет PySide6-UI. | — |
+| `ui/pyside6/app.py` | `run_ui_pyside6()` — создаёт `QApplication`, грузит QSS, поднимает `PipelineBridge`, показывает `DashboardWindow`, запускает Qt event loop. | `PySide6.QtWidgets.QApplication`. |
+| `ui/pyside6/bridge.py` | `PipelineBridge(QObject)` — мост между `main.VoicePipeline` и Qt-UI. UI зовёт слоты (`start_pipeline`, `request_turn`, `request_recalibrate`, `request_set_model`, `request_toggle_standby`, `request_cancel`, `shutdown`), бридж эмитит сигналы (`state_changed`, `turn_result`, `level_update`, `health_update`, `models_list`, …). Тяжёлая работа — в выделенном `QThread`; уровень/health — на `QTimer`. | `QObject`, `QThread`, `QTimer`, `Signal`, `Slot`. |
+| `ui/pyside6/dashboard.py` | `DashboardWindow(QMainWindow)` — двухколоночный layout 960×640: слева оперативная панель (статус, LevelMeter, последний оборот, тайминги, выбор LLM-модели, 4 кнопки), справа `DevicesPanel`; внизу status bar с тремя точками STT/LLM/TTS. Кнопка ⚙ — заглушка Settings. | `QMainWindow`, виджеты. |
+| `ui/pyside6/styles/solarized.qss` | Qt-стили (тема Solarized) для дашборда. | QSS. |
+| `ui/pyside6/widgets/__init__.py` | Пакет виджетов. | — |
+| `ui/pyside6/widgets/devices_panel.py` | `DevicesPanel` — текущие аудио-устройства Windows (`utils.audio_devices`) + заряд BT (`utils.bluetooth_battery`, поллинг в фоновом `QThread`). Только отображение. | `QThread`, `QTimer`. |
+| `ui/pyside6/widgets/level_meter.py` | `LevelMeter` — RMS-индикатор на `QPainter` с маркерами шума и порога VAD; подписан на `level_update`. | `QPainter`, `QPen`. |
+| `ui/pyside6/widgets/status_indicator.py` | `StatusIndicator` — иконка + текст статуса pipeline. `STATE_LABELS` — единый источник правды по именам состояний (совпадают с `VoicePipeline.on_stage` / `WakeWordListener.on_state`). | `QLabel`. |
+| `ui/pyside6/widgets/screenshot_flash.py` | `ScreenshotFlashOverlay` — frameless on-top click-through копия кадра после скриншота: hold + zoom-in fade-out, затем `deleteLater`. Крепится к `primaryScreen()`. | `QPropertyAnimation`, `QPixmap`. |
+| `ui/pyside6/widgets/wake_hint_overlay.py` | `WakeHintOverlay` — полноэкранный полупрозрачный список команд при пробуждении (источник — `commands.hint_provider`). Frameless / on-top / click-through; один переиспользуемый экземпляр (`show_lines()`/`hide_now()`). | `QGraphicsDropShadowEffect`, `QPropertyAnimation`. |
 
 ### `system/` — интеграция с Windows
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
 | `system/__init__.py` | Package placeholder. | — |
-| `system/session_manager.py` | `SessionManager` — ленивая папка `logs/sessions/YYYY-MM-DD_HH-MM/` (+ суффикс при коллизии). Потокобезопасен (`threading.Lock`). `save_note(text)`, `save_screenshot(png_bytes)`. | `pathlib`, `threading`. |
+| `system/session_manager.py` | `SessionManager` — папка сессии в `~/Shura/` (помесячная `YYYY-MM` или `per_session` по `SESSION_LAYOUT`). Потокобезопасен. `save_note(text)`, `save_screenshot(png_bytes)`, `save_note_with_screenshot(text, png_data)` возвращает пути и предупреждения. HTML-журнал всегда помесячный. | `pathlib`, `threading`, `system.note_journal`. |
 | `system/screenshot.py` | `take_screenshot(monitor=None) → png_bytes` через `mss`. По умолчанию — основной монитор. | `mss`, `PIL.Image`. |
-| `system/media_keys.py` | Тонкий враппер над Win32 `SendInput` (user32): `VK_MEDIA_PLAY_PAUSE` (0xB3), `VK_VOLUME_UP/DOWN` (0xAF/0xAE), `VK_MEDIA_NEXT/PREV_TRACK`, `VK_LEFT/RIGHT`. Все media-key нажатия идут с флагом `KEYEVENTF_EXTENDEDKEY` (иначе Chromium-браузеры фильтруют синтетику). Экспортирует `_send_mouse_event`, `MOUSEEVENTF_MOVE`, `MOUSEEVENTF_MOVE_NOCOALESCE` для `system.keep_awake`. Защита от screensaver'а вынесена в `system/keep_awake.py` — dismiss активного стороннего screensaver'а через SendInput невозможен (другой desktop). | `ctypes.windll.user32.SendInput`. |
-| `system/keep_awake.py` | Anti-screensaver: удерживает дисплей активным на время диалога через Win32 `SetThreadExecutionState(ES_CONTINUOUS \| ES_DISPLAY_REQUIRED)` — тот же механизм, что VLC/Chromium при fullscreen-видео. `acquire(hold_seconds, *, reason="")` ставит флаг и (пере)запускает `threading.Timer` на отложенный релиз; повторный вызов идемпотентен и продлевает таймер. `release()` снимает флаг досрочно. При краше флаг убирает ОС автоматически. Импортирует `_send_mouse_event` из `system.media_keys` для nudge'а `LASTINPUTINFO`. Интегрирован в `main.VoicePipeline` и `core.wake_word`. | API: `acquire()`, `release()`, `is_active()`. Константа `KEEP_AWAKE_AFTER_TURN_S` из `config.py`. |
-| `system/audio_session_mute.py` | `MuteController` через `pycaw`: per-session mute всех Windows audio sessions, **кроме своей**. COM init per-call (`comtypes.CoInitialize()` — STA, иначе RPC_E_CHANGED_MODE c pycaw). | `pycaw`, `comtypes`. |
+| `system/note_journal.py` | Месячный офлайн HTML-журнал заметок: миниатюры, просмотр оригинала и атомарное добавление записей. Включается через `notes.html_with_screenshot` в Modern UI. | `PIL.Image`, `utils.file_io`. |
+| `system/media_keys.py` | Враппер над Win32 `SendInput`: `play_pause()`, `volume_up/down()`, `next_track()`/`prev_track()`, `arrow_left/right()`. Media-key нажатия с `KEYEVENTF_EXTENDEDKEY` (иначе Chromium фильтрует синтетику). Экспортирует `_send_mouse_event`, `MOUSEEVENTF_*` для `system.keep_awake`. | `ctypes.windll.user32.SendInput`. |
+| `system/keep_awake.py` | Anti-screensaver: `SetThreadExecutionState(ES_CONTINUOUS \| ES_DISPLAY_REQUIRED)` на время диалога. `acquire(hold_seconds, *, reason="")` + `threading.Timer` на отложенный релиз, `release()`. Интегрирован в `VoicePipeline` и `core.wake_word`. | `acquire()`, `release()`, `is_active()`. |
+| `system/audio_session_mute.py` | `MuteController` через `pycaw`: per-session mute всех Windows audio sessions, **кроме своей**. COM init per-call (`comtypes.CoInitialize()` — STA). | `pycaw`, `comtypes`. |
 
 ### `utils/` — вспомогательное
 
 | Файл | Назначение | Ключевые символы |
 |---|---|---|
 | `utils/__init__.py` | Пустой. | — |
-| `utils/audio_devices.py` | `get_current_devices() → (DeviceInfo|None, DeviceInfo|None)` — текущие Windows-дефолты. CLI `python -m utils.audio_devices` — список всех устройств. | `sounddevice.query_devices`. |
+| `utils/file_io.py` | Атомарная запись байтов через уникальный временный файл на том же диске; используется для настроек и HTML-журнала. | `tempfile`, `os.fsync`, `Path.replace`. |
+| `utils/audio_devices.py` | `get_current_devices() → (DeviceInfo|None, DeviceInfo|None)` — текущие Windows-дефолты. CLI `python -m utils.audio_devices`. | `sounddevice.query_devices`. |
+| `utils/bluetooth_battery.py` | Чтение заряда BT-устройств через PowerShell PnP-property (DEVPKEY `{104EA319…} 2`, как «Параметры → Bluetooth»). Эвристика `bt_matches_audio` фильтрует только аудио-периферию. Без сторонних зависимостей. CLI `python -m utils.bluetooth_battery`. | `subprocess`, PowerShell `Get-PnpDevice*`. |
 | `utils/errors.py` | Таксономия исключений: `VoiceAIError` (root), `AudioError`, `STTError`, `LLMError`, `TTSError`, `ConfigError`, `CancelledError`. | `Exception` subclasses. |
-| `utils/helpers.py` | `save_state_atomic()` — tmp-file → `os.replace` для crash-safe записи JSON-стейта. | `json`, `os.replace`. |
-| `utils/generate_ack_phrases.py` | Одноразовая генерация ack-WAV'ов в `assets/ack/` через Silero. Не перезаписывает существующее (`--overwrite` для форсирования). Поддерживает три фазы: `before` (перед диктовкой), `after` (успешное завершение), `fail` (команда не смогла выполниться — играется альтернативная фраза). Таблица `ACK_PHRASES` — источник истины для всех команд и фаз. | `core.silero_tts`. |
+| `utils/helpers.py` | `save_state_atomic()` — tmp-file → `os.replace` для crash-safe записи JSON. | `json`, `os.replace`. |
+| `utils/startup_timing.py` | Отдельный JSONL-журнал длительности запуска; прогноз индикатора по последним пяти успешным загрузкам (первоначально 25 с). | `StartupTimings`, `logs/model_startup.jsonl`. |
+| `utils/generate_ack_phrases.py` | Одноразовая генерация ack-WAV'ов в `assets/ack/` через Silero. Таблица `ACK_PHRASES` — источник истины (фазы `before`/`after`/`fail`). | `core.silero_tts`. |
 | `utils/tts_speakers.py` | CLI `python -m utils.tts_speakers` — список встроенных XTTS-v2 спикеров. | `TTS.api.TTS`. |
 
-### `players/` — медиа-адаптеры
+### `scripts/` — служебные скрипты
+
+| Файл | Назначение | Запуск |
+|---|---|---|
+| `scripts/command_stats.py` | Статистика использования команд из `logs/recognized.log` (по команде/синониму, с фильтром по дате). | `python -m scripts.command_stats [--by synonym] [--since DATE]`. |
+| `scripts/dump_commands_snapshot.py` | Сериализация `CommandRegistry` (name, synonyms, command_type) в `tests/fixtures/commands_snapshot.json` — baseline для `test_commands_registry.py`. | `python scripts/dump_commands_snapshot.py`. |
+| `scripts/dump_config_snapshot.py` | Сериализация всех констант `config.py` в `tests/fixtures/config_snapshot_baseline.json` — baseline для `test_config_contract.py` (Path сериализуются относительно корня). | `python scripts/dump_config_snapshot.py`. |
+| `scripts/dump_voice_commands.py` | Печать эффективного реестра команд **после** применения TOML-overlay (`build_configured_registry()`). | `python -m scripts.dump_voice_commands`. |
+| `scripts/validate_voice_commands_config.py` | Валидация `config/voice_commands.toml` без запуска ассистента. | `python -m scripts.validate_voice_commands_config`. |
+| `scripts/screenshot_dashboard.py` | PNG-скриншот `DashboardWindow` через offscreen Qt + заглушечный bridge (без загрузки Whisper/TTS). | `python scripts/screenshot_dashboard.py`. |
+
+### `config/` — пользовательские конфиги (overlay)
 
 | Файл | Назначение |
 |---|---|
-| `players/__init__.py` | Заготовка пакета (изначально для VLC/MPC-HC/YouTube адаптеров, в итоге заменено на media-key подход в `system/media_keys.py`). |
+| `config/voice_commands.example.toml` | Шаблон TOML-overlay команд (`enabled`/`mode`/`synonyms`/`hint`/`show_in_hints`/`order`). Копируется в `config/voice_commands.toml`. Загружается `commands/voice_config.py`. |
+| `config/wake_hints.example.json` | Легаси-список для полноэкранной шпаргалки (`command`/`label`/`show`/`order`). Копируется в `config/wake_hints.json`. Перекрывается метаданными `voice_commands.toml`. Загружается `commands/hint_provider.py`. |
+| `config/voice_commands.toml`, `config/wake_hints.json` | Реальные пользовательские файлы (не коммитятся). |
 
 ### `tests/` — pytest
 
 | Файл | Назначение |
 |---|---|
 | `tests/__init__.py` | — |
-| `tests/test_wake_word.py` | Юнит-тесты `core.wake_word._normalize` / `contains_wake_word` (чистые функции, без мик/модели). |
-| `tests/test_reminder_listing.py` | 24 теста на `core.reminders.listing`: склонения счётчика (`_count_phrase`), порядковые числительные (`_ordinal_neuter`), форматирование остатка времени (`format_remaining`) и сборку итоговой фразы (`format_reminders_list`) — включая граничные случаи (0 напоминаний, clamp отрицательного остатка, fallback для 11+). |
-| `tests/fixtures/sample.wav` | WAV-фикстура. |
+| `tests/conftest.py` | Общие фикстуры/хуки: моки провайдеров STT/LLM/TTS и зависимостей `VoicePipeline` (AudioStream, AudioPlayer, VAD, менеджеры). Используются `test_pipeline_smoke.py`. |
+| `tests/test_wake_word.py` | Юнит-тесты `core.wake_word._normalize` / `contains_wake_word`. |
+| `tests/test_reminder_listing.py` | Тесты `core.reminders.listing`: склонения, порядковые, остаток времени, сборка фразы. |
+| `tests/test_commands_registry.py` | Контракт `CommandRegistry` против snapshot'а + инвариант «≥2 слов». |
+| `tests/test_voice_commands_config.py` | Тесты TOML-overlay (`commands.voice_config`): merge синонимов, disable, валидация, hint-метаданные. |
+| `tests/test_config_contract.py` | Контракт `config.py` против baseline-snapshot (имена/значения/типы констант не меняются при shim-рефакторинге). |
+| `tests/test_config_importers.py` | Smoke-импорты всех модулей-потребителей `config` (защита от поломки shim'а). |
+| `tests/test_pipeline_smoke.py` | Smoke-инициализация `VoicePipeline` с полностью подменёнными зависимостями; проверка имён `on_stage`. |
+| `tests/test_bluetooth_matcher.py` | Тесты эвристики `bt_matches_audio` (`utils.bluetooth_battery`). |
+| `tests/fixtures/commands_snapshot.json` | Baseline-снапшот команд для `test_commands_registry.py`. |
+| `tests/fixtures/config_snapshot_baseline.json` | Baseline-снапшот констант config для `test_config_contract.py`. |
+| `tests/fixtures/sample.wav` | WAV-фикстура (также дефолтный XTTS speaker). |
 
 ### `assets/` — пререндеры
 
 | Путь | Назначение |
 |---|---|
-| `assets/ack/*.wav` | Предварительно сгенерированные Silero ack-фразы для каждой команды/фазы: `note_before/after`, `screenshot_after`, `pause_after`, `mute_after/unmute_after`, `volume_up/down_after`, `seek_forward/backward_after`, `stop_after`, `cancel_after`, `question_before`, `resume_after`, `translate_video_after`, `translate_video_fail`. Проигрываются через `AudioPlayer` мгновенно, без повторного синтеза. |
-| `assets/yandex_translate_icon.png` | Шаблон кнопки «Перевести и озвучить» Яндекс.Браузера для `pyautogui.locateOnScreen`. Скриншот сделан в полноэкранном режиме YouTube — в оконном режиме фон отличается и шаблон может не совпасть. |
+| `assets/ack/*.wav` | Pre-rendered Silero ack-фразы по командам/фазам: `note_before/after`, `screenshot_after`, `pause_after`, `resume_after`, `mute/unmute_after`, `volume_up/down_after`, `seek_forward/backward_after`, `stop_after`, `cancel_after`, `question_before`, `reminder_before`, `translate_video_after/fail`. Проигрываются через `AudioPlayer` мгновенно. |
+| `assets/yandex_translate_icon.png` | Шаблон кнопки «Перевести и озвучить» Яндекс.Браузера для `pyautogui.locateOnScreen` (скриншот в полноэкранном YouTube). |
+
+### `docs/` — документация и тикеты
+
+| Путь | Назначение |
+|---|---|
+| `docs/MIGRATION_PLAN.md` | Дорожная карта стейджей M1–M8 (команды, wake-word, overlay). Это план, не журнал. |
+| `docs/VOICE_AI_PROJECT_SPECIFICATION.md` | Исходная спецификация этапов 0–8. |
+| `docs/config_migration_map.md` | Маппинг старых констант `config.py` → секции `config_model.Settings` (база для shim'а и тестов контракта). |
+| `docs/voice_commands_config_discussion.md` | Обсуждение дизайна TOML-overlay голосовых команд. |
+| `docs/translate_video_command.md` | Заметка по команде перевода видео. |
+| `docs/wake_hint_overlay.md` | Заметка по wake-hint оверлею. |
+| `docs/tickets/pause_single_youtube_video.md` | Тикет по паузе одиночного YouTube-видео. |
+| `docs/dashboard_preview.png` | Превью PySide6-дашборда. |
+
+### `players/` — медиа-адаптеры
+
+| Файл | Назначение |
+|---|---|
+| `players/__init__.py` | Заготовка пакета (заменено на media-key подход в `system/media_keys.py`). |
 
 ### `models/` — веса Whisper
 
 | Файл | Назначение |
 |---|---|
-| `models/large-v3-turbo.pt` | Текущая Whisper-модель (по умолчанию в `config.WHISPER_MODEL_SIZE`). Быстрее large-v3 (~2×), WER сравнимый. |
+| `models/large-v3-turbo.pt` | Текущая Whisper-модель (по умолчанию). Быстрее large-v3 (~2×), WER сравнимый. |
 | `models/large-v3.pt` | Запасная Whisper-модель для отката. |
 
 ### `logs/` — runtime-артефакты
 
 | Путь | Назначение |
 |---|---|
-| `logs/voice_ai.log` | Ротируемый лог всех подсистем (5 МБ × 3). |
-| `logs/unrecognized.log` | Отдельный журнал фраз, на которые `CommandRouter` не нашёл команду — для сбора синонимов. |
+| `logs/voice_ai.log` | Ротируемый лог всех подсистем. |
+| `logs/unrecognized.log` | Фразы, на которые `CommandRouter` не нашёл команду — для сбора синонимов. |
+| `logs/recognized.log` | Журнал распознанных команд (`<ts>\t<command>\t<synonym>\t<full_text>`) — источник для `scripts/command_stats.py`. |
 | `logs/tts_out/` | Выходные WAV-файлы TTS (timestamped). |
-| `logs/sessions/YYYY-MM-DD_HH-MM/` | Лениво создаваемая папка сессии с заметками (`note_*.txt`) и скриншотами (`screenshot_*.png`). |
+| `logs/reminders.json` | Персистентность активных напоминаний. |
+</content>

@@ -85,6 +85,8 @@ htmlcov/
 
 # Пользовательские настройки (генерируются UI Settings; diff-only от дефолтов)
 settings.toml
+config/voice_commands.toml
+config/wake_hints.json
 
 # System
 python

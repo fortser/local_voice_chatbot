@@ -24,6 +24,10 @@ class ScreenshotCommand(BaseCommand):
         "сохрани скриншот",
         "сохранить скриншот",
         "сними экран",
+        # Whisper часто глотает «с» в «сделай» → «делай»; «сделать» —
+        # инфинитивная форма. Обе видны в logs/unrecognized.log.
+        "делай скриншот",
+        "сделать скриншот",
     )
     ack_after = "screenshot_after.wav"
 

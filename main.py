@@ -46,7 +46,7 @@ from commands import (
     CommandContext,
     CommandRouter,
     TurnStats,
-    build_default_registry,
+    build_configured_registry,
 )
 from config import (
     ACK_DIR,
@@ -146,6 +146,7 @@ class VoicePipeline:
         self._llm = create_llm_provider()
         self._tts = create_tts_provider()
         self._player = AudioPlayer()
+        self._audio_devices: dict = {"input": None, "output": None}
         self._gpu_swap = _tts_requires_gpu_swap()
         # Reentrant: a turn that's already holding the lock can call
         # ``dictate()`` (which also wants the lock) without deadlocking. IPC
@@ -192,7 +193,7 @@ class VoicePipeline:
         # path: STT result is offered to the router *before* falling through to
         # the LLM. Wake-word strip-out lives in the router itself so the same
         # logic works in console-typed input and serial-mode (M10).
-        self._registry = build_default_registry()
+        self._registry = build_configured_registry()
         self._router = CommandRouter(
             self._registry,
             wake_words=(WAKE_WORD, *WAKE_WORD_ALIASES),
@@ -714,6 +715,71 @@ class VoicePipeline:
                 "thinking_detected": bool(thinking),
             }
 
+    @property
+    def audio_devices(self) -> dict:
+        return dict(self._audio_devices)
+
+    def configure_audio_devices(self, endpoints: dict) -> None:
+        """Bind Windows endpoints between turns, retaining the VAD's stream object."""
+        from system.audio_devices import resolve_wasapi_devices
+        from utils.errors import AudioError
+
+        with self._lock:
+            previous = self._audio_devices
+            was_running = self._stream.is_running
+            previous_input = self._stream.device
+            previous_output = self._player.device
+
+            def bind(selection: dict, refresh: bool) -> None:
+                indices = resolve_wasapi_devices(selection, refresh=refresh)
+                if selection.get("input") is None:
+                    raise AudioError("Нет активного микрофона Windows")
+                self._stream.set_device(indices["input"])
+                self._player.set_device(indices["output"])
+                if was_running:
+                    self._stream.start()
+
+            self._stream.stop()
+            self._player.stop()
+            try:
+                bind(endpoints, refresh=True)
+                if was_running and self._vad is not None and endpoints.get("input") != previous.get("input"):
+                    self._vad.calibrate()
+            except Exception as original:
+                self._stream.stop()
+                try:
+                    if previous.get("input"):
+                        bind(previous, refresh=False)
+                    else:
+                        self._stream.set_device(previous_input)
+                        self._player.set_device(previous_output)
+                        if was_running:
+                            self._stream.start()
+                except Exception as rollback:
+                    self._audio_devices = {"input": None, "output": None}
+                    raise AudioError(f"{original}. Микрофон недоступен: восстановление не удалось ({rollback})") from original
+                raise
+            self._audio_devices = {key: dict(value) if value else None for key, value in endpoints.items()}
+
+    def model_status(self) -> dict:
+        """Local metadata only; safe to poll while a turn or LLM request runs."""
+        return {
+            "stt": {
+                "provider": type(self._stt).__name__,
+                "model": getattr(self._stt, "model_name", None),
+                "device": getattr(self._stt, "device", None),
+                "loaded": bool(getattr(self._stt, "is_loaded", False)),
+                "gpu_swap": self._gpu_swap,
+            },
+            "tts": {
+                "provider": type(self._tts).__name__,
+                "model": getattr(self._tts, "model_name", None),
+                "device": getattr(self._tts, "device", None),
+                "loaded": bool(getattr(self._tts, "is_loaded", False)),
+                "gpu_swap": self._gpu_swap,
+            },
+        }
+
     def health_check(self) -> dict[str, object]:
         """Snapshot of subsystem status. Never raises — reports errors inline.
 
@@ -731,20 +797,12 @@ class VoicePipeline:
             llm_error = str(exc)
 
         return {
-            "stt": {
-                "provider": type(self._stt).__name__,
-                "loaded": bool(getattr(self._stt, "is_loaded", False)),
-            },
+            **self.model_status(),
             "llm": {
                 "provider": type(self._llm).__name__,
                 "model": getattr(self._llm, "model", None),
                 "healthy": llm_ok,
                 "error": llm_error,
-            },
-            "tts": {
-                "provider": type(self._tts).__name__,
-                "loaded": bool(getattr(self._tts, "is_loaded", False)),
-                "gpu_swap": self._gpu_swap,
             },
             "audio": {
                 "stream_running": bool(self._stream.is_running),
@@ -1091,24 +1149,29 @@ def main() -> int:
     )
     parser.add_argument(
         "--ui",
-        choices=["tkinter", "pyside6"],
-        default="tkinter",
+        choices=["modern", "tkinter", "pyside6"],
+        default="modern",
         help=(
             "UI backend (только для --mode ui). "
-            "tkinter = старый монолит (default, пока идёт редизайн); "
-            "pyside6 = новый Dashboard (в разработке, этапы 3–8 soft-sniffing-allen.md)."
+            "modern = новый модульный интерфейс (default); "
+            "tkinter / pyside6 = прежние интерфейсы."
         ),
     )
     parser.add_argument(
         "--no-ipc",
         action="store_true",
-        help="Console mode only: skip starting the IPC server.",
+        help="UI/console modes: skip starting the IPC server.",
     )
     parser.add_argument("--host", default=IPC_HOST, help="IPC bind host.")
     parser.add_argument("--port", type=int, default=IPC_PORT, help="IPC bind port.")
     args = parser.parse_args()
 
     if args.mode == "ui":
+        if args.ui == "modern":
+            from ui.modern.app import run_ui_modern
+            return run_ui_modern(
+                with_ipc=not args.no_ipc, ipc_host=args.host, ipc_port=args.port
+            )
         if args.ui == "pyside6":
             from ui.pyside6.app import run_ui_pyside6
             return run_ui_pyside6(

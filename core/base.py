@@ -10,8 +10,29 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
+def model_device(model, target: str) -> str:
+    """Read a loaded torch model's placement without importing torch."""
+    if model is not None:
+        device = getattr(model, "device", None)
+        if device is not None:
+            return str(device)
+        try:
+            return str(next(model.parameters()).device)
+        except (AttributeError, StopIteration, TypeError):
+            pass
+    return target
+
+
 class STTProvider(ABC):
     """Speech-to-text backend (e.g. Whisper, Vosk)."""
+
+    @property
+    def model_name(self) -> str | None:
+        return None
+
+    @property
+    def device(self) -> str | None:
+        return None
 
     @abstractmethod
     def load_model(self) -> None:
@@ -40,6 +61,14 @@ class LLMProvider(ABC):
 
 class TTSProvider(ABC):
     """Text-to-speech backend (e.g. XTTS-v2, MeloTTS)."""
+
+    @property
+    def model_name(self) -> str | None:
+        return None
+
+    @property
+    def device(self) -> str | None:
+        return None
 
     @abstractmethod
     def load_model(self) -> None:

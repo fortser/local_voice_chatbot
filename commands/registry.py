@@ -54,8 +54,8 @@ class CommandRegistry:
         return list(self._by_name.keys())
 
 
-def build_default_registry() -> CommandRegistry:
-    """Construct the registry with all M1 stub commands.
+def _default_commands() -> list[BaseCommand]:
+    """Instantiate all built-in command handlers.
 
     Imported lazily inside the function so a test importing only
     :class:`CommandRegistry` doesn't pay for the full command tree.
@@ -74,6 +74,7 @@ def build_default_registry() -> CommandRegistry:
     from commands.reminder_command import ReminderCommand
     from commands.screenshot_command import ScreenshotCommand
     from commands.translate_video_command import TranslateVideoCommand
+    from commands.subscribe_channel_command import SubscribeChannelCommand
     from commands.stubs import (
         SeekBackwardCommand,
         SeekForwardCommand,
@@ -82,31 +83,89 @@ def build_default_registry() -> CommandRegistry:
         StopCommand,
     )
 
-    registry = CommandRegistry(
-        [
-            # GLOBAL first — semantic priority, not lookup order.
-            # Cancel не голосовой (M6) — Esc в UI: `pipeline.request_cancel()`.
-            StopCommand(),
-            # INSTANT
-            PauseCommand(),
-            ResumeCommand(),
-            VolumeUpCommand(),
-            VolumeDownCommand(),
-            MuteCommand(),
-            UnmuteCommand(),
-            SeekForwardCommand(),
-            SeekBackwardCommand(),
-            SkipForwardCommand(),
-            SkipBackwardCommand(),
-            ScreenshotCommand(),
-            TranslateVideoCommand(),
-            # CONTENT
-            NoteCommand(),
-            QuestionCommand(),
-            # Reminder — INSTANT, но парсит хвост regex'ом внутри execute().
-            ReminderCommand(),
-            ListRemindersCommand(),
-        ]
-    )
+    return [
+        # GLOBAL first — semantic priority, not lookup order.
+        # Cancel не голосовой (M6) — Esc в UI: `pipeline.request_cancel()`.
+        StopCommand(),
+        # INSTANT
+        PauseCommand(),
+        ResumeCommand(),
+        VolumeUpCommand(),
+        VolumeDownCommand(),
+        MuteCommand(),
+        UnmuteCommand(),
+        SeekForwardCommand(),
+        SeekBackwardCommand(),
+        SkipForwardCommand(),
+        SkipBackwardCommand(),
+        ScreenshotCommand(),
+        TranslateVideoCommand(),
+        SubscribeChannelCommand(),
+        # CONTENT
+        NoteCommand(),
+        QuestionCommand(),
+        # Reminder — CONTENT, но парсит хвост regex'ом внутри execute().
+        ReminderCommand(),
+        ListRemindersCommand(),
+    ]
+
+
+def build_default_registry() -> CommandRegistry:
+    """Construct the built-in registry without user voice-command config."""
+    registry = CommandRegistry(_default_commands())
     logger.info("Command registry built: %d commands", len(registry))
+    return registry
+
+
+def build_configured_registry(
+    *,
+    config_path=None,
+    strict: bool | None = None,
+    allow_disable_global: bool | None = None,
+) -> CommandRegistry:
+    """Construct the registry and apply optional user TOML command overlay."""
+    from config import (
+        COMMANDS_ALLOW_DISABLE_GLOBAL,
+        COMMANDS_STRICT_CONFIG,
+        VOICE_COMMANDS_FILE,
+    )
+    from commands.voice_config import (
+        VoiceCommandConfigError,
+        apply_voice_commands_config,
+    )
+
+    path = config_path if config_path is not None else VOICE_COMMANDS_FILE
+    strict_mode = COMMANDS_STRICT_CONFIG if strict is None else strict
+    allow_global = (
+        COMMANDS_ALLOW_DISABLE_GLOBAL
+        if allow_disable_global is None
+        else allow_disable_global
+    )
+    commands = _default_commands()
+    try:
+        commands, result = apply_voice_commands_config(
+            commands,
+            config_path=path,
+            allow_disable_global=allow_global,
+        )
+    except VoiceCommandConfigError:
+        if strict_mode:
+            raise
+        logger.exception(
+            "Voice command config is invalid; falling back to built-in commands"
+        )
+        commands = _default_commands()
+    else:
+        if result.applied:
+            logger.info(
+                "Voice command config applied: path=%s changed=%s disabled=%s "
+                "user_synonyms=%d",
+                result.path,
+                list(result.changed_commands),
+                list(result.disabled_commands),
+                result.user_synonym_count,
+            )
+
+    registry = CommandRegistry(commands)
+    logger.info("Configured command registry built: %d commands", len(registry))
     return registry

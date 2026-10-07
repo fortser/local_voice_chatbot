@@ -33,7 +33,7 @@ from config import (
     TTS_MODEL_NAME,
     TTS_SPEAKER_NAME,
 )
-from core.base import TTSProvider
+from core.base import TTSProvider, model_device
 from core.tts_utils import make_output_path, resolve_speaker_wav
 from utils.errors import TTSError
 
@@ -82,6 +82,15 @@ class XTSTTTS(TTSProvider):
         self._model = None
 
     # ---- TTSProvider ----
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def device(self) -> str:
+        synthesizer = getattr(self._model, "synthesizer", None)
+        return model_device(getattr(synthesizer, "tts_model", None), self._device)
 
     def load_model(self) -> None:
         if self._model is not None:
@@ -167,7 +176,6 @@ class XTSTTTS(TTSProvider):
         if self._model is None:
             return
         logger.info("Unloading XTTS (VRAM before: %s)", _vram_snapshot())
-        del self._model
         self._model = None
         gc.collect()
         try:

@@ -55,6 +55,17 @@ def get_current_devices() -> tuple[DeviceInfo | None, DeviceInfo | None]:
     return in_info, out_info
 
 
+def wasapi_extra_settings(device: int | str | None):
+    """Allow Windows shared-mode conversion to the pipeline/TTS sample rate."""
+    if device is None:
+        return None
+    info = sd.query_devices(device)
+    api = sd.query_hostapis(info["hostapi"])
+    if "wasapi" in str(api["name"]).casefold():
+        return sd.WasapiSettings(auto_convert=True)
+    return None
+
+
 def _safe(text: str) -> str:
     try:
         enc = getattr(__import__("sys").stdout, "encoding", None) or "utf-8"

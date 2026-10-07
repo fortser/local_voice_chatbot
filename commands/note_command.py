@@ -20,11 +20,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from commands.base import BaseCommand, CommandContext, CommandType
 from commands.router import normalize
-from config import NOTE_FAST_PATH_MIN_WORDS, WAKE_WORD, WAKE_WORD_ALIASES
-from utils.errors import STTError
+from config import NOTE_FAST_PATH_MIN_WORDS, WAKE_WORD, WAKE_WORD_ALIASES, settings
+from system.screenshot import take_screenshot
+from utils.errors import CancelledError, STTError
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,10 @@ class NoteCommand(BaseCommand):
         "добавь заметку",
         "добавить заметку",
         "новая заметка",
+        # Формы из logs/unrecognized.log: «добавлю заметку» (Whisper путает
+        # «добавь»→«добавлю/добавил»), «запомни» — естественный триггер.
+        "добавлю заметку",
+        "запомни заметку",
     )
 
     def execute(self, ctx: CommandContext) -> bool:
@@ -80,6 +86,16 @@ class NoteCommand(BaseCommand):
         if session is None:
             logger.warning("NoteCommand: SessionManager не передан в контекст")
             return False
+
+        journal_enabled = settings.notes.html_with_screenshot
+        png = None
+        captured_at = None
+        if journal_enabled:
+            try:
+                png = take_screenshot()
+                captured_at = datetime.now()
+            except Exception:
+                logger.exception("NoteCommand: не удалось захватить экран")
 
         tail = _extract_tail(ctx.full_text, ctx.matched_synonym)
         words = tail.split()
@@ -94,6 +110,8 @@ class NoteCommand(BaseCommand):
                 note_text = pipeline.dictate(
                     ack_filename=self.ack_before, stats=ctx.stats
                 )
+            except CancelledError:
+                return True
             except STTError:
                 logger.exception("NoteCommand: STT упал во время диктовки")
                 print("⚠ Диктовка не распознана.")
@@ -104,7 +122,20 @@ class NoteCommand(BaseCommand):
                 print("⚠ Нечего записывать (тишина).")
                 return True
 
-        path = session.save_note(note_text)
+        warnings = ()
+        try:
+            if journal_enabled:
+                result = session.save_note_with_screenshot(
+                    note_text, png, captured_at=captured_at)
+                path = result.html_path or result.text_path
+                warnings = result.warnings
+            else:
+                path = session.save_note(note_text)
+        except OSError:
+            logger.exception("NoteCommand: не удалось сохранить текст заметки")
+            self._notify(ctx, "Не удалось сохранить заметку.")
+            pipeline._speak_safely("Не удалось сохранить заметку.")
+            return True
         print(f"✅ Заметка сохранена: {path}")
         print(f"   «{note_text}»")
         # Голосовая верификация: «добавила в заметки» + TTS-чтение текста.
@@ -112,4 +143,17 @@ class NoteCommand(BaseCommand):
         # ошибки распознавания становятся очевидны сразу.
         pipeline._play_ack(self.NOTE_SAVED_ACK)
         pipeline._speak_safely(note_text)
+        for warning in warnings:
+            self._notify(ctx, warning)
+        if warnings:
+            pipeline._speak_safely(" ".join(warnings))
         return True
+
+    @staticmethod
+    def _notify(ctx: CommandContext, message: str) -> None:
+        print(message)
+        if ctx.ui_callback is not None:
+            try:
+                ctx.ui_callback("note_warning", {"message": message})
+            except Exception:
+                logger.exception("NoteCommand: ui_callback raised")

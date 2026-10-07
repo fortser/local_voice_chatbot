@@ -1,0 +1,173 @@
+# User-editable voice command overlay.
+#
+# Copy this file to config/voice_commands.toml and edit the copy.
+# Behavior stays in Python command classes; this file only changes enabled
+# status, synonyms, and wake-hint display metadata.
+#
+# Rules:
+# - command table names must match BaseCommand.name from commands/*.py
+# - every synonym must contain at least two words after normalization
+# - mode = "extend" adds synonyms to built-in defaults
+# - mode = "replace" replaces built-in synonyms for that command
+# - enabled = false disables a non-GLOBAL command
+
+version = 1
+
+[commands.stop]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "закончи работу"
+show_in_hints = false
+
+[commands.pause]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "поставь фильм на паузу",
+  # "приостанови видео",
+]
+hint = "пауза"
+show_in_hints = true
+order = 4
+
+[commands.resume]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "продолжай видео",
+]
+hint = "продолжи"
+show_in_hints = true
+order = 5
+
+[commands.volume_up]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "звук громче",
+]
+hint = "сделай громче"
+show_in_hints = true
+order = 8
+
+[commands.volume_down]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "звук тише",
+]
+hint = "сделай тише"
+show_in_hints = true
+order = 9
+
+[commands.mute]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "выключи звук"
+show_in_hints = true
+order = 6
+
+[commands.unmute]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "включи звук"
+show_in_hints = true
+order = 7
+
+[commands.seek_forward]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "следующий трек"
+show_in_hints = true
+order = 10
+
+[commands.seek_backward]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "предыдущий трек"
+show_in_hints = false
+
+[commands.skip_forward]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "чуть вперёд"
+show_in_hints = false
+
+[commands.skip_backward]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "чуть назад"
+show_in_hints = false
+
+[commands.screenshot]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "сделай скриншот"
+show_in_hints = true
+order = 2
+
+[commands.translate_video]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "переведи ролик",
+]
+hint = "переведи видео"
+show_in_hints = true
+order = 12
+
+[commands.subscribe_channel]
+enabled = true
+mode = "extend"
+synonyms = [
+  "подпиши меня на канал",
+  "подпишись на этот канал",
+]
+hint = "подпишись на канал"
+show_in_hints = true
+order = 13
+
+[commands.note]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "запиши мысль",
+]
+hint = "запиши заметку"
+show_in_hints = true
+order = 1
+
+[commands.question]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "помоги разобраться",
+]
+hint = "ответь на вопрос"
+show_in_hints = true
+order = 3
+
+[commands.reminder]
+enabled = true
+mode = "extend"
+synonyms = [
+  # "создай таймер",
+]
+hint = "поставь напоминание"
+show_in_hints = true
+order = 11
+
+[commands.list_reminders]
+enabled = true
+mode = "extend"
+synonyms = []
+hint = "перечисли напоминания"
+show_in_hints = false

@@ -359,9 +359,11 @@ class DashboardWindow(QMainWindow):
     def _build_wake_hint_lines(self) -> list[str]:
         try:
             from commands.hint_provider import load_hint_lines
-            from commands.registry import build_default_registry
 
-            registry = build_default_registry()
+            pipeline = self._bridge.pipeline
+            if pipeline is None:
+                return []
+            registry = pipeline.router.registry
             return load_hint_lines(
                 registry,
                 hints_file=WAKE_HINTS_FILE,

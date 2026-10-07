@@ -20,6 +20,14 @@
 #                                          # вида YYYY-MM. "per_session" —
 #                                          # отдельная папка YYYY-MM-DD_HH-MM
 #                                          # на каждый запуск (старое поведение).
+# voice_commands_file = "config/voice_commands.toml"
+
+# --- Заметки ------------------------------------------------------------------
+# [notes]
+# html_with_screenshot = false            # true — снимок в начале команды,
+#                                         # TXT и HTML-журнал за месяц.
+#                                         # PNG и миниатюры хранятся рядом с HTML.
+#                                         # Флажок в Modern UI применяет без перезапуска.
 
 # --- STT / Whisper ------------------------------------------------------------
 # [stt]
@@ -68,6 +76,11 @@
 # pause_threshold = 1.0
 # calibration_duration = 2.0
 
+# --- Голосовые команды --------------------------------------------------------
+# [commands]
+# strict_config = true                    # true = ошибка в voice_commands.toml останавливает запуск
+# allow_disable_global = false            # защита StopCommand от случайного отключения
+
 # --- DeepFilterNet ------------------------------------------------------------
 # [deepfilter]
 # enabled = false                          # включать после приёмки check_stage_9.py
@@ -82,8 +95,9 @@
 
 # Полноэкранная шпаргалка с командами при пробуждении ("Шурочка ...").
 # Появляется на 1.5 с поверх всех окон и плавно растворяется. Click-through —
-# не перехватывает мышь. Список редактируется в config/wake_hints.json
-# (см. config/wake_hints.example.json).
+# не перехватывает мышь. Список берётся из config/voice_commands.toml
+# (hint/show_in_hints/order), затем из legacy config/wake_hints.json, затем
+# автоматически из реестра команд.
 # [ui.wake_hint]
 # enabled = true
 # trigger_state = "wake_active"           # "wake_heard" — раньше / "wake_active" — пока ждёт фразу

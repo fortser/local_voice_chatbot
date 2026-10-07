@@ -8,13 +8,18 @@ Public surface:
 
 * :class:`commands.base.BaseCommand`, :class:`CommandType`,
   :class:`CommandContext` — the ABC and DTOs.
-* :class:`commands.registry.CommandRegistry` and
-  :func:`build_default_registry` — discovery / wiring of command instances.
+* :class:`commands.registry.CommandRegistry`,
+  :func:`build_default_registry`, and :func:`build_configured_registry` —
+  discovery / wiring of command instances.
 * :class:`commands.router.CommandRouter` — text → command dispatch.
 """
 
 from commands.base import BaseCommand, CommandContext, CommandType, TurnStats
-from commands.registry import CommandRegistry, build_default_registry
+from commands.registry import (
+    CommandRegistry,
+    build_configured_registry,
+    build_default_registry,
+)
 from commands.router import CommandRouter
 
 __all__ = [
@@ -24,5 +29,6 @@ __all__ = [
     "TurnStats",
     "CommandRegistry",
     "CommandRouter",
+    "build_configured_registry",
     "build_default_registry",
 ]

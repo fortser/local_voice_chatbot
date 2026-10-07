@@ -3,13 +3,15 @@
 
 Где редактировать команды
 
-- Реестр активных голосовых команд хранится в commands/registry.py, функция build_default_registry().
-- Сами команды и их синонимы лежат в классах внутри commands/*.py. Ищите атрибуты name, command_type и synonyms у нужного класса команды.
-- Чтобы добавить синоним, добавьте новую фразу в synonyms нужного класса. Фраза должна быть минимум из двух слов.
-- Чтобы изменить существующую команду, правьте её класс в commands/*.py; если добавляете новый класс команды, зарегистрируйте его в build_default_registry().
-- После изменения синхронизируйте tests/fixtures/commands_snapshot.json и этот файл, затем проверьте pytest tests/test_commands_registry.py.
+- Пользовательские синонимы и подсказки редактируются в config/voice_commands.toml. Шаблон: config/voice_commands.example.toml.
+- Реестр встроенных команд хранится в commands/registry.py. Дефолтный кодовый реестр: build_default_registry(); runtime-реестр с TOML-overlay: build_configured_registry().
+- Сами обработчики команд лежат в классах внутри commands/*.py. Ищите атрибуты name, command_type и synonyms у нужного класса.
+- Чтобы добавить пользовательский синоним, добавьте фразу в [commands.<name>].synonyms в config/voice_commands.toml. Фраза должна быть минимум из двух слов.
+- Чтобы заменить встроенные синонимы команды, задайте mode = "replace"; чтобы только добавить новые — mode = "extend".
+- Чтобы изменить поведение команды или добавить новый обработчик, правьте Python-класс в commands/*.py и зарегистрируйте его в build_default_registry().
+- После правок проверьте конфиг командой python scripts/validate_voice_commands_config.py. Для кодовых изменений также обновите tests/fixtures/commands_snapshot.json и проверьте pytest tests/test_commands_registry.py.
 
-Источник истины: commands.registry.build_default_registry() и классы команд в commands/.
+Источник истины: Python-классы команд + пользовательский overlay config/voice_commands.toml.
 Произносить после wake-word: «Шурочка, ...». Алиас wake-word: «Шура».
 
 Как работает распознавание команд

@@ -32,6 +32,8 @@ except ModuleNotFoundError:  # Python 3.10 — этот проект
 
 import tomli_w
 
+from utils.file_io import atomic_write_bytes
+
 REPO_ROOT = Path(__file__).resolve().parent
 SETTINGS_TOML_PATH = REPO_ROOT / "settings.toml"
 
@@ -66,6 +68,7 @@ class PathsSettings(_Section):
     ack_dir: Path = REPO_ROOT / "assets" / "ack"
     reminders_file: Path = REPO_ROOT / "logs" / "reminders.json"
     wake_hints_file: Path = REPO_ROOT / "config" / "wake_hints.json"
+    voice_commands_file: Path = REPO_ROOT / "config" / "voice_commands.toml"
     session_base_dir: str = "~/Shura"
     session_layout: Literal["per_session", "monthly"] = "monthly"
     tts_output_dir: str = "logs/tts_out"
@@ -216,6 +219,12 @@ class CommandSettings(_Section):
     verbose_ack: bool = True
     note_fast_path_min_words: int = 3
     question_fast_path_min_words: int = 2
+    strict_config: bool = True
+    allow_disable_global: bool = False
+
+
+class NotesSettings(_Section):
+    html_with_screenshot: bool = False
 
 
 class DictateSettings(_Section):
@@ -344,6 +353,7 @@ class Settings(_Section):
     wake_word: WakeWordSettings = Field(default_factory=WakeWordSettings)
     keep_awake: KeepAwakeSettings = Field(default_factory=KeepAwakeSettings)
     commands: CommandSettings = Field(default_factory=CommandSettings)
+    notes: NotesSettings = Field(default_factory=NotesSettings)
     dictate: DictateSettings = Field(default_factory=DictateSettings)
     mouse_nudge: MouseNudgeSettings = Field(default_factory=MouseNudgeSettings)
     ui: UISettings = Field(default_factory=UISettings)
@@ -430,7 +440,7 @@ def save_settings(
     if diff_only:
         data = _diff_dict(data, Settings().model_dump(mode="python"))
     payload = _to_toml_primitive(data)
-    path.write_bytes(tomli_w.dumps(payload).encode("utf-8"))
+    atomic_write_bytes(path, tomli_w.dumps(payload).encode("utf-8"))
     return path
 
 
@@ -449,6 +459,7 @@ __all__ = [
     "XTTSSettings",
     "WakeWordSettings",
     "CommandSettings",
+    "NotesSettings",
     "DictateSettings",
     "ScreenshotFlashSettings",
     "WakeHintSettings",

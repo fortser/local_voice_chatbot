@@ -1,7 +1,7 @@
 {
   "version": 1,
   "updated_at": "2026-04-29",
-  "_comment": "Список команд для полноэкранной шпаргалки при пробуждении. Скопируй в config/wake_hints.json и правь под себя. См. commands/hint_provider.py.",
+  "_comment": "Legacy-список команд для полноэкранной шпаргалки. Новый основной пользовательский файл: config/voice_commands.toml (hint/show_in_hints/order). См. commands/hint_provider.py.",
   "items": [
     {"command": "note",           "label": "запиши заметку",       "show": true,  "order": 1},
     {"command": "screenshot",     "label": "сделай скриншот",      "show": true,  "order": 2},

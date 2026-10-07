@@ -33,6 +33,9 @@ class PauseCommand(BaseCommand):
         "поставь на паузу",
         "поставить на паузу",
         "сделай паузу",
+        # Спряжения из logs/unrecognized.log: «поставим/поставьте на паузу».
+        "поставим на паузу",
+        "поставьте на паузу",
     )
     ack_after = "pause_after.wav"
 

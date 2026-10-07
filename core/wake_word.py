@@ -49,7 +49,7 @@ from config import (
 )
 from core.audio_beep import generate_beep
 from system import keep_awake
-from utils.errors import AudioError, STTError, VoiceAIError
+from utils.errors import AudioError, CancelledError, STTError, VoiceAIError
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,7 @@ class WakeWordListener:
         # ``_enabled`` gates the scan loop without killing the thread — the
         # UI toggle flips this, start()/stop() manage the thread lifetime.
         self._enabled = threading.Event()
+        self._scan_cancel = threading.Event()
 
         self._beep_on = generate_beep(
             WAKE_WORD_BEEP_ON_FREQ,
@@ -141,6 +142,7 @@ class WakeWordListener:
         """Signal stop and join the thread. Safe to call multiple times."""
         self._stop_event.set()
         self._enabled.clear()
+        self._scan_cancel.set()
         thread = self._thread
         if thread is not None and thread.is_alive():
             # Scan window + STT latency bound; +1s cushion.
@@ -152,6 +154,8 @@ class WakeWordListener:
         """Turn on standby listening. Requires ``start()`` to have been called."""
         if self._enabled.is_set():
             return
+        # Keep the previous scan's cancellation set even on a quick resume.
+        self._scan_cancel = threading.Event()
         self._enabled.set()
         self._emit(STATE_STANDBY_IDLE)
         logger.info("Standby mode enabled")
@@ -161,6 +165,7 @@ class WakeWordListener:
         if not self._enabled.is_set():
             return
         self._enabled.clear()
+        self._scan_cancel.set()
         self._emit(STATE_WAKE_DISABLED)
         logger.info("Standby mode disabled")
 
@@ -203,14 +208,19 @@ class WakeWordListener:
                 return
 
             # 1. Scan: short window, brief pause, fast give-up on silence.
+            scan_cancel = self._scan_cancel
             try:
                 scan_wav = vad.record_until_silence(
                     pause_threshold=0.5,
                     max_duration=self._scan_window,
                     initial_silence_timeout=self._scan_window,
+                    cancel_event=scan_cancel,
                 )
-            except AudioError:
+            except (AudioError, CancelledError):
                 # No speech in this window — normal path.
+                return
+
+            if self._stop_event.is_set() or scan_cancel.is_set() or not self._enabled.is_set():
                 return
 
             # 2. Transcribe scan and check for wake-word.
@@ -220,7 +230,7 @@ class WakeWordListener:
                 logger.exception("Wake-word scan STT failed")
                 return
 
-            if not text:
+            if not text or self._stop_event.is_set() or scan_cancel.is_set() or not self._enabled.is_set():
                 return
 
             matched = contains_wake_word(text, self._wake_word, self._aliases)
@@ -257,7 +267,7 @@ class WakeWordListener:
                     self._active_timeout,
                 )
                 self._play_beep(self._beep_off)
-                self._emit(STATE_STANDBY_IDLE)
+                self._emit(STATE_STANDBY_IDLE if self.is_enabled else STATE_WAKE_DISABLED)
                 return
 
             # 4. Run the full turn on the recorded question.
@@ -275,7 +285,7 @@ class WakeWordListener:
             # wake-word. Same beep as the timeout path — in both cases the
             # meaning is "активный режим закрыт, снова жду «шурочку»".
             self._play_beep(self._beep_off)
-            self._emit(STATE_STANDBY_IDLE)
+            self._emit(STATE_STANDBY_IDLE if self.is_enabled else STATE_WAKE_DISABLED)
 
     # ---- helpers ------------------------------------------------------------
 
