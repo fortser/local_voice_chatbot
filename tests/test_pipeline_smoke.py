@@ -56,3 +56,30 @@ def test_start_stop_cycle(pipeline) -> None:
     pipeline.start()
     pipeline.stop()
     pipeline.stop()  # повторный stop безопасен
+
+
+def test_injected_speech_resources_reused_and_not_owned_by_pipeline(mock_providers, mock_audio):
+    from main import VoicePipeline
+    from core.speech_runtime import SpeechRuntime
+
+    stt, tts = mock_providers["stt"], mock_providers["tts"]
+    stt.is_loaded = tts.is_loaded = True
+    mock_audio["vad"].noise_rms = 100
+    mock_audio["vad"].threshold = 180
+    runtime = SpeechRuntime(stt_factory=lambda: stt, tts_factory=lambda: tts,
+                            stream_factory=lambda: mock_audio["stream"],
+                            player_factory=lambda: mock_audio["player"], gpu_swap=False)
+    runtime.vad = mock_audio["vad"]
+    pipeline = VoicePipeline(speech_runtime=runtime)
+    assert pipeline.lock is runtime.lock
+    assert pipeline.stt is runtime.stt
+    assert pipeline.stream is runtime.stream
+    pipeline.start()
+    stt.load_model.assert_not_called()
+    tts.load_model.assert_not_called()
+    pipeline.stop()
+    stt.unload_model.assert_not_called()
+    tts.unload_model.assert_not_called()
+    runtime.close()
+    stt.unload_model.assert_called_once()
+    tts.unload_model.assert_called_once()

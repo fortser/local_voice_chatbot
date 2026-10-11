@@ -132,6 +132,10 @@ class XTSTTTS(TTSProvider):
             "XTTS loaded in %.1fs (VRAM after: %s)", elapsed, _vram_snapshot()
         )
 
+    @property
+    def max_input_chars(self) -> int:
+        return 180
+
     def synthesize(self, text: str) -> str:
         if self._model is None:
             raise TTSError("XTTS model not loaded — call load_model() first")
@@ -167,6 +171,7 @@ class XTSTTTS(TTSProvider):
                 kwargs["speaker_wav"] = str(self._speaker_wav)
             self._model.tts_to_file(**kwargs)
         except Exception as exc:
+            out_path.unlink(missing_ok=True)
             raise TTSError(f"XTTS synthesis failed: {exc}") from exc
         elapsed = time.monotonic() - t0
         logger.info("Synthesis done in %.2fs → %s", elapsed, out_path)

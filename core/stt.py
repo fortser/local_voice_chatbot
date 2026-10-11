@@ -172,7 +172,9 @@ class WhisperSTT(STTProvider):
             "Whisper loaded in %.1fs (VRAM after: %s)", elapsed, _vram_snapshot()
         )
 
-    def transcribe(self, audio_path: str) -> str:
+    def transcribe(self, audio_path: str, *, profile: str = "command") -> str:
+        if profile not in {"command", "dictation"}:
+            raise STTError(f"Unknown transcription profile: {profile}")
         if self._model is None:
             raise STTError("Whisper model not loaded — call load_model() first")
 
@@ -198,7 +200,7 @@ class WhisperSTT(STTProvider):
                 audio,
                 language=self._language,
                 fp16=(self._device == "cuda"),
-                initial_prompt="Шурочка, Шура, Пайтон, Линукс.",
+                initial_prompt="Шурочка, Шура, Пайтон, Линукс." if profile == "command" else None,
                 condition_on_previous_text=False,
             )
         except Exception as exc:
@@ -209,7 +211,7 @@ class WhisperSTT(STTProvider):
         logger.info(
             "Transcription done in %.2fs: %r", elapsed, text[:120] + ("…" if len(text) > 120 else "")
         )
-        if _is_hallucination(text):
+        if profile == "command" and _is_hallucination(text):
             logger.info("Filtered Whisper hallucination phrase: %r → ''", text)
             return ""
         return text

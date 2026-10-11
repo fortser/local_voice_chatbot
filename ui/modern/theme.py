@@ -26,14 +26,16 @@ def stylesheet() -> str:
     QPushButton:hover {{ background: #313e44; border-color: #677b7d; }}
     QPushButton:pressed {{ background: #394b50; }}
     QPushButton:disabled {{ color: #6f7c83; background: #1b2227; border-color: #293238; }}
-    QPushButton:focus, QLineEdit:focus, QComboBox:focus {{ border: 1px solid {c['accent']}; }}
+    QPushButton:focus, QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{ border: 1px solid {c['accent']}; }}
     QPushButton[role='primary'] {{ background: {c['accent']}; color: {c['ink']}; font-weight: 600; border-color: {c['accent']}; }}
     QPushButton[role='primary']:hover {{ background: #c6f6df; }}
     QPushButton[role='primary']:disabled {{ background: #34483e; color: #81998e; border-color: #34483e; }}
     QPushButton[role='nav'] {{ text-align: left; background: transparent; border: 1px solid transparent; padding: 14px 16px; color: {c['muted']}; }}
     QPushButton[role='nav']:checked {{ background: #25392f; color: {c['accent']}; border-color: #354e40; }}
     QPushButton[role='nav']:hover {{ background: #202a2b; }}
-    QLineEdit, QComboBox, QTextBrowser, QListWidget {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 12px; selection-background-color: #385e50; }}
+    QLineEdit, QComboBox, QTextBrowser, QPlainTextEdit, QListWidget {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 12px; selection-background-color: #385e50; }}
+    QProgressBar {{ background: {c['raised']}; border: 1px solid {c['border']}; border-radius: 6px; text-align: center; min-height: 18px; }}
+    QProgressBar::chunk {{ background: #385e50; border-radius: 5px; }}
     QComboBox QAbstractItemView {{ background: {c['raised']}; selection-background-color: #385e50; }}
     QListWidget::item {{ padding: 14px; border-bottom: 1px solid {c['border']}; }}
     QListWidget::item:selected {{ background: #2b443a; border-radius: 8px; }}

@@ -329,6 +329,7 @@ class SileroTTS(TTSProvider):
         try:
             sf.write(str(out_path), samples, self._sample_rate, subtype="PCM_16")
         except Exception as exc:
+            out_path.unlink(missing_ok=True)
             raise TTSError(f"Failed to write {out_path}: {exc}") from exc
 
         elapsed = time.monotonic() - t0

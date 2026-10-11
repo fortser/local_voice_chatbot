@@ -50,6 +50,13 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 
 ## Структура файлов
 
+### Самостоятельные речевые инструменты
+
+- `core/speech_runtime.py`, `core/dictation.py`: общие ленивые модели и аудиоресурсы, нейтральное распознавание, непрерывная запись с очередью, полный синтез длинного текста и атомарный экспорт.
+- `ui/modern/speech_backend.py`, `ui/modern/speech_pages.py`: независимые фоновые операции, страницы STT/TTS и плавающая кнопка. `VoicePipeline` получает общий runtime через необязательный аргумент `speech_runtime`.
+- `system/text_injector.py`: Unicode-вставка в активное приложение Windows без буфера обмена и Enter.
+- `tests/test_speech_runtime.py`, `tests/test_speech_tools_ui.py`, `tests/test_text_injector.py`: проверки без моделей, микрофона и LLM. `scripts/preview_speech_tools.py` сохраняет снимки интерфейса без запуска ядра.
+
 ### Корень проекта
 
 | Файл | Назначение | Ключевые точки входа / выхода |

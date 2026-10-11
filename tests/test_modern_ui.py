@@ -51,7 +51,7 @@ def test_navigation_and_extension(app, tmp_path):
                           settings=QSettings(str(tmp_path / "ui.ini"), QSettings.IniFormat))
     window.navigate("notes")
     assert window.title.text() == "Заметки"
-    assert window.stack.currentIndex() == 4
+    assert window.stack.currentIndex() == 6
     window.navigate("missing")
     assert window.stack.currentIndex() == 0
     window.close()

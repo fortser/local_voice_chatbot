@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from utils.startup_timing import StartupTimings
+from .speech_backend import SpeechToolsBackend
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class AssistantBackend(QObject):
         self._server: Any = None
         self._jobs: queue.Queue = queue.Queue()
         self._closing = threading.Event()
+        self._shutdown_requested = threading.Event()
         self._operation_pending = threading.Event()
         self._submission_lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -71,10 +73,12 @@ class AssistantBackend(QObject):
         self._health_timer.timeout.connect(self._request_health)
         self.ready.connect(self._start_timers)
         self._health_done.connect(self._clear_health_pending)
+        self.speech = SpeechToolsBackend(self)
+        self.speech.busy_changed.connect(self._speech_level_timer)
 
     def start_pipeline(self) -> None:
         with self._submission_lock:
-            if self._thread is not None or self._closing.is_set():
+            if self._thread is not None or self._closing.is_set() or self.speech.busy:
                 return
             estimate = self._timings().estimate_seconds()
             self._startup_started_at = time.perf_counter()
@@ -160,6 +164,9 @@ class AssistantBackend(QObject):
         # Listener controls only set Events; pausing must not wait behind a
         # voice turn, health check or model operation in the worker queue.
         self._standby_requested = bool(enabled)
+        if self.speech.busy:
+            self.speech.resume_standby = bool(enabled)
+            return
         if enabled:
             self._listener.enable()
         else:
@@ -172,33 +179,58 @@ class AssistantBackend(QObject):
 
     def request_audio_devices(self) -> None:
         self._failed_audio_target = None
+        if self._pipeline is None:
+            self.speech.refresh_audio_devices()
+            return
         self._audio_poll.set()
 
     def request_set_audio_device(self, direction: str, endpoint_id: str) -> bool:
-        if (self._audio_service is None or self._pipeline is None or self._closing.is_set()
+        if (self._closing.is_set() or self._startup_started_at is not None
                 or self._operation_pending.is_set() or direction not in {"input", "output"}):
+            return False
+        if self._pipeline is None:
+            return self.speech.select_audio_device(direction, endpoint_id)
+        if self._audio_service is None:
             return False
         return self._submit("audio_device", (direction, endpoint_id))
 
     def request_cancel(self) -> None:
+        if self.speech.busy:
+            self.speech.cancel()
+            return
         if self._pipeline is not None:
             self._pipeline.request_cancel()
 
     def shutdown(self) -> None:
+        self._shutdown_requested.set()
         if self._closing.is_set():
             return
         self._closing.set()
+        self.speech.begin_shutdown()
         self._audio_poll.set()
         self._level_timer.stop()
         self._health_timer.stop()
         self.request_cancel()
+        if self._pipeline is not None:
+            self._pipeline.request_cancel()
         self._jobs.put(("stop", None))
         if self._thread is None:
-            self.stopped.emit()
+            if self.speech._runtime is None and not self.speech.busy:
+                self.stopped.emit()
+            else:
+                def finish():
+                    self.speech.finish_shutdown()
+                    self.stopped.emit()
+                threading.Thread(target=finish, name="speech-shutdown", daemon=True).start()
 
     def _run(self) -> None:
+        failed = False
         try:
-            self._initialize()
+            if self._pipeline_factory is None:
+                with self.speech.runtime.lock:
+                    self._initialize()
+            else:
+                self._initialize()
             if self._closing.is_set():
                 return
             self._finish_startup("ready")
@@ -222,6 +254,8 @@ class AssistantBackend(QObject):
                         self._operation_pending.clear()
                         self._idle()
         except Exception as exc:
+            failed = True
+            self._closing.set()
             self._finish_startup("error")
             logger.exception("Modern UI initialization failed")
             self.fatal.emit(str(exc))
@@ -231,12 +265,23 @@ class AssistantBackend(QObject):
             self._audio_poll.set()
             for monitor in self._monitors:
                 monitor.join()
+            self.speech.begin_shutdown()
+            if self.speech._thread is not None:
+                self.speech._thread.join()
             for resource in (self._listener, self._server, self._pipeline):
                 if resource is not None:
                     try:
                         resource.stop()
                     except Exception:
                         logger.exception("Modern UI cleanup failed")
+            self.speech.finish_shutdown()
+            if failed and not self._shutdown_requested.is_set():
+                self._pipeline = self._listener = self._server = None
+                self._monitors.clear()
+                self._thread = None
+                self._operation_pending.clear()
+                self.speech.reopen_after_assistant_failure()
+                self._closing.clear()
             self.stopped.emit()
 
     def _initialize(self) -> None:
@@ -245,7 +290,7 @@ class AssistantBackend(QObject):
             from bootstrap import bootstrap
             from main import VoicePipeline
             bootstrap()
-            factory = VoicePipeline
+            factory = lambda: VoicePipeline(speech_runtime=self.speech.runtime)
         self._pipeline = factory()
         if self._pipeline_factory is None:
             if self._audio_service is None:
@@ -414,6 +459,7 @@ class AssistantBackend(QObject):
                 if selection is not None:
                     direction, endpoint_id = selection
                     snapshot = self._audio_service.switch(direction, endpoint_id, bind)
+                    self._audio_preferences[direction] = endpoint_id
                     self.audio_device_selected.emit(direction, endpoint_id)
                 else:
                     snapshot = self._audio_service.snapshot()
@@ -465,9 +511,22 @@ class AssistantBackend(QObject):
     def _clear_health_pending(self) -> None:
         self._health_pending = False
 
+    @Slot(bool)
+    def _speech_level_timer(self, busy: bool) -> None:
+        if self._closing.is_set():
+            return
+        # Queued completion may arrive after the next speech job has started.
+        if self.speech.busy:
+            self._level_timer.start()
+        elif self._pipeline is None:
+            self._level_timer.stop()
+            self.level_update.emit(0.0, 0)
+
     @Slot()
     def _poll_level(self) -> None:
         stream = getattr(self._pipeline, "stream", None)
+        if stream is None and self.speech._runtime is not None:
+            stream = self.speech._runtime._stream
         if stream is None or not stream.is_running:
             return
         latest = None

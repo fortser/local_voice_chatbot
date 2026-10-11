@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from .components import button, label
 from .pages import CommandsPage, HistoryPage, OverviewPage, SettingsPage
+from .speech_pages import STTPage, TTSPage
 from .theme import stylesheet
 
 STATES = {
@@ -43,6 +44,8 @@ class PageSpec:
 
 DEFAULT_PAGES = (
     PageSpec("overview", "Обзор", "Всё, что нужно для общения с ассистентом", OverviewPage),
+    PageSpec("stt", "Распознавание речи", "Диктовка и аудиофайлы в текст", STTPage),
+    PageSpec("tts", "Озвучка текста", "Текст в речь и аудиофайл", TTSPage),
     PageSpec("history", "История", "Ваши команды и ответы в одном месте", HistoryPage),
     PageSpec("commands", "Команды", "Возможности вашего голосового ассистента", CommandsPage),
     PageSpec("settings", "Настройки", "Настройте ассистента под себя", SettingsPage),
@@ -111,7 +114,7 @@ class ModernWindow(QMainWindow):
         content.addWidget(self.notice)
         self.stack = QStackedWidget()
         content.addWidget(self.stack, 1)
-        self.footer = label("Предпросмотр · микрофон и модели не запускаются" if preview else "Модели и микрофон запустятся по кнопке «Начать работу»", "muted")
+        self.footer = label("Предпросмотр · микрофон и модели не запускаются" if preview else "Ассистент запускается по кнопке «Начать работу» · речевые инструменты работают самостоятельно", "muted")
         content.addWidget(self.footer)
         outer.addLayout(content, 1)
 
@@ -156,6 +159,7 @@ class ModernWindow(QMainWindow):
         backend.screenshot_taken.connect(lambda png: self.footer.setText("Снимок экрана сохранён в папке сессий"))
         backend.audio_device_selected.connect(self._save_audio_device)
         backend.audio_devices_update.connect(self._audio_state)
+        backend.speech.busy_changed.connect(self._speech_busy)
         self._shortcuts = []
         for sequence, callback in (("Ctrl+Space", self.record), ("Escape", backend.request_cancel)):
             shortcut = QShortcut(QKeySequence(sequence), self)
@@ -193,13 +197,15 @@ class ModernWindow(QMainWindow):
         if name == "idle" and self._wake_available and not self._listening:
             name = "paused"
         self._state = name
-        self.can_act = self._ready and name in {"idle", "standby_idle", "paused"} and not self.preview
+        self.can_act = (self._ready and name in {"idle", "standby_idle", "paused"}
+                        and not self.preview and not self.backend.speech.busy)
         text = STATES.get(name, name)
         if detail and isinstance(detail, str):
             text += f" · {detail}"
         self.overview.status.setText(text)
         self.overview.orb.set_active(name not in {"not_started", "idle", "standby_idle", "paused", "error", "stopped"})
-        self.overview.start.setEnabled(not self._started and not self._ready and not self.preview and not self._closing)
+        self.overview.start.setEnabled(not self._started and not self._ready and not self.preview
+                                       and not self._closing and not self.backend.speech.busy)
         if self._ready:
             start_text = "Работа начата"
         elif self._started and name not in {"error", "stopped", "stopping"}:
@@ -220,7 +226,7 @@ class ModernWindow(QMainWindow):
             self.badge.setText(badge.get(name, "●  ГОТОВА" if self.can_act else "○  В РАБОТЕ"))
 
     def start_work(self) -> None:
-        if self._started or self._ready or self.preview or self._closing:
+        if self._started or self._ready or self.preview or self._closing or self.backend.speech.busy:
             return
         self._started = True
         self.notice.hide()
@@ -296,6 +302,9 @@ class ModernWindow(QMainWindow):
         self._started = True
         self.set_state("standby_idle" if self._listening else "idle")
 
+    def _speech_busy(self, busy: bool) -> None:
+        self.set_state(self._state)
+
     def _standby_available(self, enabled: bool) -> None:
         self._wake_available = enabled
         self._update_listening_button()
@@ -319,10 +328,15 @@ class ModernWindow(QMainWindow):
 
     def _on_stopped(self) -> None:
         self._finish_loading()
-        self._stopped = True
+        self._stopped = self._closing or self.backend._shutdown_requested.is_set()
         self._ready = False
         if self._closing:
             self.close()
+        elif not self.backend._closing.is_set():
+            self._started = False
+            self.set_state("error")
+            for key in ("stt", "tts"):
+                self.pages[key].refresh()
         elif not self.notice.isVisible():
             self.set_state("stopped")
 
@@ -335,6 +349,9 @@ class ModernWindow(QMainWindow):
         event.ignore()
         if not self._closing:
             self._closing = True
+            self.pages["stt"].shutdown()
+            for key in ("stt", "tts"):
+                self.pages[key].refresh()
             self._finish_loading()
             self.set_state("stopping")
             self.footer.setText("Освобождаю микрофон и модели. Окно закроется после завершения.")

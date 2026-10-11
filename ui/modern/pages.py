@@ -170,7 +170,7 @@ class OverviewPage(QWidget):
             name = active.get("name", "—") if active else "недоступен"
             if direction == "input" and not snapshot.get("stream_running", True):
                 name += " · поток остановлен"
-            elif active and active.get("id") != info.get("default_id"):
+            elif active and not snapshot.get("standalone") and active.get("id") != info.get("default_id"):
                 name += " · ожидает переключения на выбор Windows"
             self.audio_labels[direction].setText(f"{title}: {name}")
             self.audio_labels[direction].setToolTip(name)
@@ -183,7 +183,8 @@ class OverviewPage(QWidget):
             for endpoint in info.get("devices", []):
                 combo.addItem(endpoint["name"], endpoint["id"])
                 combo.setItemData(combo.count() - 1, endpoint["name"], Qt.ToolTipRole)
-            combo.setCurrentIndex(combo.findData(info.get("default_id")))
+            selected = active.get("id") if snapshot.get("standalone") and active else info.get("default_id")
+            combo.setCurrentIndex(combo.findData(selected))
             combo.blockSignals(False)
         self.set_audio_enabled(self.context.can_act)
 
@@ -371,7 +372,7 @@ class SettingsPage(QWidget):
         self.animation.setChecked(context.settings.value("animation", True, type=bool))
         self.animation.toggled.connect(self._animation)
         appearance.body.addWidget(self.animation)
-        appearance.body.addWidget(label("Ctrl+Space — запись     Esc — отмена     Ctrl+1…4 — разделы", "muted"))
+        appearance.body.addWidget(label("Ctrl+Space — запись     Esc — отмена     Ctrl+1…6 — разделы", "muted"))
         layout.addWidget(appearance)
 
         notes = Card("Заметки")

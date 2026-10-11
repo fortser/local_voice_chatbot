@@ -139,20 +139,21 @@ class TurnResult:
 class VoicePipeline:
     """One AudioStream + VAD + STT + LLM + TTS, orchestrated per-turn."""
 
-    def __init__(self) -> None:
-        self._stream = AudioStream()
+    def __init__(self, *, speech_runtime=None) -> None:
+        self._speech_runtime = speech_runtime
+        self._stream = speech_runtime.stream if speech_runtime is not None else AudioStream()
         self._vad: VoiceActivityDetector | None = None
-        self._stt = create_stt_provider()
+        self._stt = speech_runtime.stt if speech_runtime is not None else create_stt_provider()
         self._llm = create_llm_provider()
-        self._tts = create_tts_provider()
-        self._player = AudioPlayer()
+        self._tts = speech_runtime.tts if speech_runtime is not None else create_tts_provider()
+        self._player = speech_runtime.player if speech_runtime is not None else AudioPlayer()
         self._audio_devices: dict = {"input": None, "output": None}
-        self._gpu_swap = _tts_requires_gpu_swap()
+        self._gpu_swap = speech_runtime.gpu_swap if speech_runtime is not None else _tts_requires_gpu_swap()
         # Reentrant: a turn that's already holding the lock can call
         # ``dictate()`` (which also wants the lock) without deadlocking. IPC
         # / wake-word / console mutual exclusion still works because all entry
         # points acquire it from a thread that doesn't already hold it.
-        self._lock = threading.RLock()
+        self._lock = speech_runtime.lock if speech_runtime is not None else threading.RLock()
         # M6: Escape-клавиша в UI сигналит через этот Event. VAD и AudioPlayer
         # опрашивают его и вылетают с CancelledError. Listener выставляется
         # извне через set_wake_listener() — нужен StopCommand, чтобы выключать
@@ -292,14 +293,21 @@ class VoicePipeline:
             type(self._tts).__name__,
             self._gpu_swap,
         )
-        self._stream.start()
         try:
-            self._vad = VoiceActivityDetector(self._stream)
+            if self._speech_runtime is not None:
+                self._speech_runtime.ensure_microphone(lambda detail: _stage("calibrating", detail))
+                self._vad = self._speech_runtime.vad
+            else:
+                self._stream.start()
+                self._vad = VoiceActivityDetector(self._stream)
 
             print("Калибровка шума (молчите ~2 сек)…")
             t0 = time.monotonic()
             _stage("calibrating", CALIBRATION_DURATION)
-            noise, threshold = self._vad.calibrate()
+            if self._speech_runtime is not None:
+                noise, threshold = self._vad.noise_rms, self._vad.threshold
+            else:
+                noise, threshold = self._vad.calibrate()
             print(
                 f"  шум={noise:.0f} RMS, порог={threshold:.0f} "
                 f"(за {time.monotonic() - t0:.1f}с)"
@@ -308,7 +316,10 @@ class VoicePipeline:
             print("Загружаю Whisper…")
             t0 = time.monotonic()
             _stage("loading_stt")
-            self._stt.load_model()
+            if self._speech_runtime is not None:
+                self._speech_runtime.ensure_stt()
+            else:
+                self._stt.load_model()
             print(f"  готов за {time.monotonic() - t0:.1f}с")
 
             if USE_DEEPFILTER:
@@ -329,7 +340,8 @@ class VoicePipeline:
                 print("Загружаю TTS…")
                 t0 = time.monotonic()
                 _stage("loading_tts")
-                self._tts.load_model()
+                if self._speech_runtime is None or not self._tts.is_loaded:
+                    self._tts.load_model()
                 print(f"  готов за {time.monotonic() - t0:.1f}с")
             else:
                 print(
@@ -373,6 +385,9 @@ class VoicePipeline:
             self._audio_mute.restore_all()
         except Exception:
             logger.exception("audio_mute.restore_all failed")
+        # An injected runtime belongs to the UI and can outlive the assistant.
+        if self._speech_runtime is not None:
+            return
         # Best-effort unload in reverse dependency order.
         for name, action in (
             ("tts.unload", self._tts.unload_model),

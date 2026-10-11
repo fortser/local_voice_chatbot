@@ -39,8 +39,8 @@ class STTProvider(ABC):
         """Load the model into memory / GPU."""
 
     @abstractmethod
-    def transcribe(self, audio_path: str) -> str:
-        """Transcribe a WAV file to text."""
+    def transcribe(self, audio_path: str, *, profile: str = "command") -> str:
+        """Transcribe audio; ``dictation`` omits command hints and phrase filtering."""
 
     @abstractmethod
     def unload_model(self) -> None:
@@ -61,6 +61,11 @@ class LLMProvider(ABC):
 
 class TTSProvider(ABC):
     """Text-to-speech backend (e.g. XTTS-v2, MeloTTS)."""
+
+    @property
+    def max_input_chars(self) -> int:
+        """Conservative chunk size for full-document synthesis."""
+        return 300
 
     @property
     def model_name(self) -> str | None:
