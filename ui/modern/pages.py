@@ -457,6 +457,9 @@ class SettingsPage(QWidget):
         if not self.context.preview:
             self.context.settings.setValue("animation", enabled)
         self.context.overview.orb.set_animated(enabled)
+        floating = self.context.pages["stt"].floating
+        if floating:
+            floating.toggle.orb.set_animated(enabled)
 
     def _update_speech_status(self) -> None:
         backend = self.context.backend

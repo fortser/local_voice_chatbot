@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from .components import Card, LevelMeter, button, label
-from .theme import stylesheet
+from .dictation_control import DictationControl
 
 
 def model_description(kind):
@@ -26,47 +26,6 @@ def model_description(kind):
         return f"Silero · {SILERO_SPEAKER} · {SILERO_DEVICE}"
     from config import TTS_SPEAKER_NAME
     return f"XTTS · {TTS_SPEAKER_NAME or 'голос из настроек'} · {TTS_DEVICE}"
-
-
-class DictationControl(QWidget):
-    def __init__(self, page):
-        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-                         | Qt.WindowDoesNotAcceptFocus)
-        self.page = page
-        self.setObjectName("page")
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setWindowTitle("Диктовка")
-        self.setStyleSheet(stylesheet())
-        self.setFocusPolicy(Qt.NoFocus)
-        self._drag = None
-        layout = QVBoxLayout(self)
-        handle = label("Диктовка · перетащите окно", "muted")
-        handle.setAttribute(Qt.WA_TransparentForMouseEvents)
-        layout.addWidget(handle)
-        self.toggle = button("Начать диктовку", page.toggle_external, "primary")
-        self.toggle.setFocusPolicy(Qt.NoFocus)
-        layout.addWidget(self.toggle)
-        self.state = label("Ctrl+Alt+D · старт / стоп", "muted")
-        layout.addWidget(self.state)
-        self.resize(265, 120)
-        position = page.context.settings.value("speech/floating_position", QPoint(60, 120))
-        if isinstance(position, QPoint) and any(screen.availableGeometry().contains(position)
-                                               for screen in QApplication.screens()):
-            self.move(position)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._drag = event.globalPosition().toPoint() - self.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self._drag is not None and event.buttons() & Qt.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        self._drag = None
-        self.page.context.settings.setValue("speech/floating_position", self.pos())
 
 
 class SpeechPage(QWidget):
@@ -141,7 +100,11 @@ class STTPage(SpeechPage):
         context.backend.audio_devices_update.connect(self._audio_devices)
         context.backend.level_update.connect(self._level)
         self.destination = QComboBox()
-        self.destination.addItems(["В поле раздела", "В активное приложение"])
+        self.destination.addItem("В поле раздела", "local")
+        self.destination.addItem("В активное приложение", "external")
+        saved_destination = context.settings.value("speech/destination", "local")
+        self.destination.setCurrentIndex(max(0, self.destination.findData(saved_destination)))
+        self.destination.currentIndexChanged.connect(self._save_preferences)
         self.destination.setAccessibleName("Куда вставлять диктовку")
         self.card.body.addWidget(self.destination)
         row = QHBoxLayout()
@@ -172,7 +135,16 @@ class STTPage(SpeechPage):
         self.editor.textChanged.connect(self.refresh)
         self.backend.text_ready.connect(self.receive_text)
         self.external_requested.connect(self.toggle_external)
+        # Restore only after all controls exist; never start recording on restore.
+        self.overlay.setChecked(context.settings.value("speech/overlay_enabled", False, type=bool))
         self.refresh()
+
+    def _save_preferences(self, *args):
+        if not self.context.preview:
+            settings = self.context.settings
+            settings.setValue("speech/destination", self.destination.currentData())
+            settings.setValue("speech/overlay_enabled", self.overlay.isChecked())
+            settings.sync()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -210,6 +182,8 @@ class STTPage(SpeechPage):
     def _level(self, rms, percent):
         self.level.set_level(rms, percent)
         self.level_text.setText(f"Уровень входа · {max(0, min(percent, 100))}%")
+        if self.floating:
+            self.floating.set_level(rms, percent)
 
     def _reset_level(self):
         self.level.set_level(0, 0)
@@ -233,8 +207,7 @@ class STTPage(SpeechPage):
         self.clear.setEnabled(text and not self.backend.busy)
         self.save.setEnabled(text and available)
         if self.floating:
-            self.floating.toggle.setText("Стоп" if self._recording else "Начать диктовку")
-            self.floating.toggle.setEnabled(available or self._recording)
+            self.floating.set_recording(self._recording, available)
 
     def start_recording(self, external=None):
         if not self.available():
@@ -260,13 +233,15 @@ class STTPage(SpeechPage):
     def toggle_overlay(self, enabled):
         if self.context.preview:
             return
+        self._save_preferences()
         if enabled:
             if self.floating is None:
                 self.floating = DictationControl(self)
             self.floating.show()
-            from ui.hotkey import HotkeyListener
-            self.hotkey = HotkeyListener("<ctrl>+<alt>+d", self.external_requested.emit)
-            self.hotkey.start()
+            if self.hotkey is None:
+                from ui.hotkey import HotkeyListener
+                self.hotkey = HotkeyListener("<ctrl>+<alt>+d", self.external_requested.emit)
+                self.hotkey.start()
         else:
             if self.hotkey:
                 self.hotkey.stop()
@@ -310,8 +285,10 @@ class STTPage(SpeechPage):
             self.floating.state.setText(message)
 
     def shutdown(self):
+        self._save_preferences()
         if self.hotkey:
             self.hotkey.stop()
+            self.hotkey = None
         if self.floating:
             self.floating.close()
             self.floating.deleteLater()

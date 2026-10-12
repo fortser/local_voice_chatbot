@@ -13,7 +13,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.speech_runtime import SpeechRuntime
@@ -213,6 +215,132 @@ def test_preview_never_starts_tools(app, tmp_path):
     assert not window.pages["stt"].audio_refresh.isEnabled()
     assert not window.pages["tts"].play.isEnabled()
     window.close()
+
+
+def test_speech_preferences_survive_close_and_restore_without_recording(window, app, service, monkeypatch):
+    hotkey = Mock()
+    monkeypatch.setattr("ui.hotkey.HotkeyListener", Mock(return_value=hotkey))
+    page = window.pages["stt"]
+    page.destination.setCurrentIndex(1)
+    page.overlay.setChecked(True)
+    page.floating.move(80, 90)
+    window.backend.audio_device_selected.emit("input", "input-new")
+    path = window.settings.fileName()
+    window.close()
+    wait_for(app, lambda: window._stopped)
+    hotkey.stop.assert_called_once()
+    assert page.floating is None
+
+    owner = AssistantBackend(with_ipc=False)
+    owner._audio_service = service[0]
+    restored = ModernWindow(owner, settings=QSettings(path, QSettings.Format.IniFormat))
+    try:
+        page = restored.pages["stt"]
+        assert page.destination.currentData() == "external"
+        assert page.overlay.isChecked() and page.floating.isVisible()
+        assert page.floating.pos() == QPoint(80, 90)
+        assert not page._recording
+        assert owner.speech._runtime is None and owner._pipeline is None
+        assert owner._audio_preferences["input"] == "input-new"
+        restored.show()
+        restored.navigate("stt")
+        wait_for(app, lambda: page.audio_input.currentData() == "input-new")
+        page.destination.setCurrentIndex(0)
+        page.overlay.setChecked(False)
+        # Changes are durable even before closing the window.
+        saved = QSettings(path, QSettings.Format.IniFormat)
+        assert saved.value("speech/destination") == "local"
+        assert not saved.value("speech/overlay_enabled", type=bool)
+        assert saved.value("audio/input") == "input-new"
+    finally:
+        restored.close()
+        wait_for(app, lambda: restored._stopped)
+
+
+def test_preview_does_not_restore_hotkey_or_write_speech_preferences(app, tmp_path, monkeypatch):
+    factory = Mock()
+    monkeypatch.setattr("ui.hotkey.HotkeyListener", factory)
+    settings = QSettings(str(tmp_path / "preview-speech.ini"), QSettings.Format.IniFormat)
+    settings.setValue("speech/destination", "external")
+    settings.setValue("speech/overlay_enabled", True)
+    settings.sync()
+    window = ModernWindow(AssistantBackend(with_ipc=False), preview=True, settings=settings)
+    try:
+        page = window.pages["stt"]
+        assert page.destination.currentData() == "external"
+        assert page.overlay.isChecked()
+        assert page.floating is None
+        page.destination.setCurrentIndex(0)
+        page.overlay.setChecked(False)
+    finally:
+        window.close()
+        wait_for(app, lambda: window._stopped)
+    factory.assert_not_called()
+    assert settings.value("speech/destination") == "external"
+    assert settings.value("speech/overlay_enabled", type=bool)
+
+
+def test_floating_orb_click_drag_transparency_and_recording(window, app, monkeypatch):
+    hotkey = Mock()
+    factory = Mock(return_value=hotkey)
+    monkeypatch.setattr("ui.hotkey.HotkeyListener", factory)
+    page = window.pages["stt"]
+    callback = Mock()
+    monkeypatch.setattr(page, "toggle_external", callback)
+    page.overlay.setChecked(True)
+    control = page.floating
+    page.toggle_overlay(True)
+    factory.assert_called_once()
+    hotkey.start.assert_called_once()
+    app.processEvents()
+    assert control.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus
+    assert control.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+    assert control.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    assert control.toggle.focusPolicy() == Qt.FocusPolicy.NoFocus
+    image = control.grab().toImage()
+    assert image.pixelColor(0, 0).alpha() == 0
+    assert 0 < image.pixelColor(10, control.height() // 2).alpha() < 255
+    QTest.mouseClick(control.toggle, Qt.MouseButton.LeftButton)
+    callback.assert_called_once()
+    callback.reset_mock()
+
+    origin = control.pos()
+    local = QPointF(control.toggle.rect().center())
+    start = QPointF(control.toggle.mapToGlobal(local.toPoint()))
+    delta = QPointF(40, 30)
+    for kind, position, buttons in (
+        (QEvent.Type.MouseButtonPress, start, Qt.MouseButton.LeftButton),
+        (QEvent.Type.MouseMove, start + delta, Qt.MouseButton.LeftButton),
+        (QEvent.Type.MouseButtonRelease, start + delta, Qt.MouseButton.NoButton),
+    ):
+        event = QMouseEvent(kind, local, position,
+                            Qt.MouseButton.NoButton if kind == QEvent.Type.MouseMove else Qt.MouseButton.LeftButton,
+                            buttons, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(control.toggle, event)
+    assert control.pos() == origin + delta.toPoint()
+    assert window.settings.value("speech/floating_position") == control.pos()
+    callback.assert_not_called()
+
+    page._recording = True
+    window.backend.speech._busy = True
+    try:
+        page.refresh()
+        window.backend.level_update.emit(1000, 65)
+        assert control.toggle.orb._active
+        assert control.toggle.orb._level == 0.65
+        assert control.toggle.isEnabled()
+        assert control.toggle.accessibleName() == "Остановить запись"
+        window.preferences.animation.setChecked(False)
+        assert not control.toggle.orb._timer.isActive()
+    finally:
+        window.backend.speech._busy = False
+        page.refresh()
+    assert not control.toggle.orb._active
+    assert control.toggle.orb._level == 0
+    assert control.toggle.accessibleName() == "Начать диктовку"
+    page.overlay.setChecked(False)
+    assert not control.isVisible()
+    assert not control.toggle.orb._timer.isActive()
 
 
 def test_successful_queued_results_survive_next_submission(window):

@@ -283,6 +283,7 @@ class ModernWindow(QMainWindow):
     def _save_audio_device(self, direction: str, endpoint_id: str) -> None:
         if not self.preview:
             self.settings.setValue(f"audio/{direction}", endpoint_id)
+            self.settings.sync()
 
     def _audio_state(self, snapshot: dict) -> None:
         self._audio_available = bool(snapshot.get("stream_running", True))
@@ -344,6 +345,7 @@ class ModernWindow(QMainWindow):
         if not self.preview:
             self.settings.setValue("geometry", self.saveGeometry())
         if self._stopped:
+            self.pages["stt"].shutdown()
             event.accept()
             return
         event.ignore()
