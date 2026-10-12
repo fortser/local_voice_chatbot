@@ -83,6 +83,7 @@ from core.audio_stream import AudioStream
 from core.prompt_manager import detect_thinking_markers
 from core.preprocessing import enhance_audio, preload_deepfilter
 from core.reminders import ReminderScheduler, ReminderStorage
+from core.speech_gate import discard as discard_gate_audio, get_speech_gate
 from core.vad import VoiceActivityDetector
 from system import keep_awake
 from system.audio_session_mute import MuteController
@@ -149,6 +150,8 @@ class VoicePipeline:
         self._player = speech_runtime.player if speech_runtime is not None else AudioPlayer()
         self._audio_devices: dict = {"input": None, "output": None}
         self._gpu_swap = speech_runtime.gpu_swap if speech_runtime is not None else _tts_requires_gpu_swap()
+        # Silero VAD перед STT: фрагменты без речи не попадают в Whisper.
+        self._speech_gate = speech_runtime.speech_gate if speech_runtime is not None else get_speech_gate()
         # Reentrant: a turn that's already holding the lock can call
         # ``dictate()`` (which also wants the lock) without deadlocking. IPC
         # / wake-word / console mutual exclusion still works because all entry
@@ -320,6 +323,7 @@ class VoicePipeline:
                 self._speech_runtime.ensure_stt()
             else:
                 self._stt.load_model()
+                self._speech_gate.preload()
             print(f"  готов за {time.monotonic() - t0:.1f}с")
 
             if USE_DEEPFILTER:
@@ -451,6 +455,27 @@ class VoicePipeline:
             logger.warning("DeepFilterNet denoise skipped: %s", exc)
             return wav_in
 
+    @property
+    def speech_gate(self):
+        return self._speech_gate
+
+    def _transcribe_recording(self, wav_in: str, *, purpose: str = "") -> str:
+        """Фильтр речи Silero VAD → DeepFilterNet → STT.
+
+        Возвращает пустую строку, если во фрагменте нет речи: Whisper не
+        вызывается и не может выдумать «Продолжение следует». Обрезанный
+        фильтром временный WAV удаляется после распознавания. ``STTError``
+        пробрасывается вызывающему, как и раньше.
+        """
+        gate = self._speech_gate.filter_file(wav_in, purpose=purpose)
+        if not gate.has_speech:
+            return ""
+        try:
+            wav_for_stt = self._preprocess_for_stt(gate.path)
+            return self._stt.transcribe(wav_for_stt).strip()
+        finally:
+            discard_gate_audio(gate)
+
     def _process_voice_input_locked(
         self,
         on_stage: Callable[[str], None] | None = None,
@@ -511,10 +536,9 @@ class VoicePipeline:
         # 2. STT
         _emit("processing")
         print("📝 Распознаю…")
-        wav_for_stt = self._preprocess_for_stt(wav_in)
         t_stt = time.monotonic()
         try:
-            user_text = self._stt.transcribe(wav_for_stt).strip()
+            user_text = self._transcribe_recording(wav_in, purpose="команда")
         except STTError as exc:
             logger.exception("STT failed")
             return TurnResult(
@@ -616,8 +640,7 @@ class VoicePipeline:
 
         with self._lock:
             t0 = time.monotonic()
-            wav_for_stt = self._preprocess_for_stt(audio_path)
-            user_text = self._stt.transcribe(wav_for_stt).strip()
+            user_text = self._transcribe_recording(audio_path, purpose="IPC")
             llm_text = ""
             wav_out: str | None = None
             if user_text:
@@ -915,10 +938,9 @@ class VoicePipeline:
                 logger.info("Dictate: тишина (%s)", exc)
                 return ""
 
-            wav_for_stt = self._preprocess_for_stt(wav)
             t_stt = time.monotonic()
             try:
-                text = self._stt.transcribe(wav_for_stt).strip()
+                text = self._transcribe_recording(wav, purpose="диктовка заметки")
             except STTError as exc:
                 logger.exception("Dictate: STT упал")
                 raise STTError(f"dictate: {exc}") from exc

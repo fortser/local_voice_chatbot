@@ -158,6 +158,103 @@ class AssistantBackend(QObject):
             settings.notes.html_with_screenshot = bool(enabled)
             return True
 
+    # ---- распознавание речи: модель и фильтры ----
+
+    STT_PROVIDERS = ("whisper", "gigaam")
+
+    def _persist_setting(self, update, message: str, *, live: bool) -> bool:
+        """Сохранить правку в settings.toml; при ``live`` применить сразу."""
+        from config import settings
+        from config_model import load_settings, save_settings
+
+        with self._submission_lock:
+            if self._closing.is_set():
+                return False
+            try:
+                updated = load_settings()
+                update(updated)
+                save_settings(updated)
+            except Exception:
+                logger.exception(message)
+                self.error_message.emit(message + ".")
+                return False
+            if live:
+                update(settings)
+            return True
+
+    @property
+    def active_stt_provider(self) -> str:
+        """Модель, с которой запущена программа."""
+        from config import settings
+
+        return settings.stt.provider.lower()
+
+    @property
+    def saved_stt_provider(self) -> str:
+        """Модель из settings.toml — действует после перезапуска."""
+        from config_model import load_settings
+
+        try:
+            return load_settings().stt.provider.lower()
+        except Exception:
+            logger.debug("settings.toml не прочитан", exc_info=True)
+            return self.active_stt_provider
+
+    def set_stt_provider(self, name: str) -> bool:
+        """Сохранить выбор модели распознавания; применяется после перезапуска."""
+        name = str(name).lower()
+        if name not in self.STT_PROVIDERS:
+            return False
+
+        def update(target):
+            target.stt.provider = name
+
+        return self._persist_setting(update, "Не удалось сохранить модель распознавания", live=False)
+
+    @property
+    def speech_gate_enabled(self) -> bool:
+        from config import settings
+
+        return settings.speech_gate.enabled
+
+    def set_speech_gate_enabled(self, enabled: bool) -> bool:
+        def update(target):
+            target.speech_gate.enabled = bool(enabled)
+
+        return self._persist_setting(update, "Не удалось сохранить настройку фильтра речи", live=True)
+
+    @property
+    def stt_filter_enabled(self) -> bool:
+        from config import settings
+
+        return settings.stt.filter.enabled
+
+    def set_stt_filter_enabled(self, enabled: bool) -> bool:
+        def update(target):
+            target.stt.filter.enabled = bool(enabled)
+
+        return self._persist_setting(update, "Не удалось сохранить настройку фильтра галлюцинаций", live=True)
+
+    @staticmethod
+    def missing_packages(kind: str) -> list[str]:
+        """Пакеты, которых не хватает для ``"gigaam"`` или ``"speech_gate"``."""
+        import importlib.util
+
+        modules = {
+            "gigaam": ("transformers", "torchaudio", "hydra", "omegaconf", "sentencepiece"),
+            "speech_gate": ("silero_vad",),
+        }.get(kind, ())
+        names = {"hydra": "hydra-core", "silero_vad": "silero-vad"}
+        missing = []
+        for module in modules:
+            try:
+                found = importlib.util.find_spec(module) is not None
+            except (ImportError, ValueError):
+                found = False
+            if not found:
+                missing.append(names.get(module, module))
+        return missing
+
     def request_toggle_standby(self, enabled: bool) -> None:
         if self._listener is None or self._closing.is_set():
             return

@@ -14,19 +14,20 @@
 - **Дежурный режим**: постоянное прослушивание кодового слова «Шурочка» и активация по нему.
 
 ### Функционал и возможности
-- Пайплайн `AudioStream → VAD → STT (Whisper) → CommandRouter → (Command | LLM) → TTS → AudioPlayer`.
+- Пайплайн `AudioStream → VAD → фильтр речи (Silero VAD) → STT (Whisper | GigaAM) → очистка галлюцинаций → CommandRouter → (Command | LLM) → TTS → AudioPlayer`.
+- **Защита от галлюцинаций STT**: `core/speech_gate.py` не пропускает в распознавание фрагменты без речи; `core/transcript_filter.py` отбрасывает сегменты Whisper по `no_speech_prob` / `avg_logprob` / `compression_ratio`, вырезает фразы субтитров («Продолжение следует», «Спасибо за просмотр») и схлопывает повторы. Работает в командах, поиске кодового слова, диктовке и распознавании файлов.
 - **Wake-word** активация («Шурочка») с ack-бипом и запасной глобальной hotkey (`Ctrl+Alt+S`).
 - **Команды**: `запиши заметку`, `сделай скриншот`, `пауза/продолжи`, `выключи/включи звук`, `громче/тише`, `следующий/предыдущий трек`, `чуть вперёд/назад`, `переведи видео`, `поставь напоминание …`, `перечисли напоминания`, `закончи работу`, `ответь на вопрос …`.
 - **Пользовательский overlay команд**: `config/voice_commands.toml` (TOML) умеет расширять/заменять синонимы, выключать команды и править метаданные wake-hint подсказки, не трогая Python-код (`commands/voice_config.py`).
 - **Сессии**: заметки и скриншоты складываются в `~/Shura/` (по умолчанию помесячная раскладка `YYYY-MM`, переключается на `per_session` в настройках).
 - **UI**: два бэкенда — легаси Tkinter-окно и новый PySide6-дашборд (`--ui pyside6`, фокус текущего редизайна) с уровнемером, health-индикаторами, панелью аудио-устройств + BT-батарея, overlay-статусом и системным треем.
 - **IPC**: TCP line-JSON сервер (`127.0.0.1:9999`) с методами `health_check`, `generate_only`, `transcribe_and_respond`, `recalibrate`.
-- **Взаимозаменяемые провайдеры**: Whisper (STT), Ollama/LM Studio (LLM), Silero/XTTS (TTS) — все реализуют ABC из `core/base.py`, переключение через настройки.
+- **Взаимозаменяемые провайдеры**: Whisper или опциональный GigaAM-v3 (STT, `[stt] provider = "gigaam"`), Ollama/LM Studio (LLM), Silero/XTTS (TTS) — все реализуют ABC из `core/base.py`, переключение через настройки.
 - **GPU VRAM swap**: если TTS == XTTS на CUDA, Whisper выгружается на время синтеза и перезагружается после — они не помещаются в VRAM одновременно.
 
 ### Конфигурация
-Все тюнинги — в Pydantic-модели `config_model.Settings` (секции paths/audio/vad/stt/llm/tts/
-wake_word/commands/ui/…). Пользовательские правки кладутся в `settings.toml` в корне
+Все тюнинги — в Pydantic-модели `config_model.Settings` (секции paths/audio/vad/speech_gate/
+stt (+ stt.filter, stt.gigaam)/llm/tts/wake_word/commands/ui/…). Пользовательские правки кладутся в `settings.toml` в корне
 (шаблон — `settings.toml.example`, в репозиторий не коммитится). `config.py` оставлен как
 **shim**: импортирует singleton `settings` и пробрасывает 90 старых module-level констант
 (`WHISPER_MODEL_SIZE`, `OLLAMA_TIMEOUT`, …) для 24 модулей-потребителей. Маппинг — в
@@ -66,7 +67,8 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `config.py` | **Shim** над `config_model.Settings`: импортирует singleton `settings = load_settings()` и пробрасывает все старые module-level константы по маппингу `docs/config_migration_map.md`. Read-only зеркало — правки значений идут через `settings.toml` или дефолты в `config_model.py`. | Экспортирует ~90 констант. |
 | `config_model.py` | Pydantic-модель конфигурации с делением на секции (`PathsSettings`, `STTSettings`, `LLMSettings`, `WakeHintSettings`, …) + `load_settings()` (дефолты + overrides из `settings.toml`) и `save_settings(diff_only=True)` (пишет только отличия от дефолтов). `extra="forbid"` — опечатка в TOML падает на валидации. | `Settings`, `load_settings`, `save_settings`, `SETTINGS_TOML_PATH`. |
 | `logging_config.py` | `setup_logging()` — идемпотентный конфиг: ротируемый файловый хендлер (`logs/voice_ai.log`) + консольный; отдельные logger'ы `unrecognized` → `logs/unrecognized.log` и распознанные команды → `logs/recognized.log`. | Функция `setup_logging()`. |
-| `requirements.txt` | pip-зависимости: `openai-whisper`, `silero`, `TTS` (Coqui XTTS), `pydantic`, `tomli`/`tomli_w`, `PySide6`, `sounddevice`, `soundfile`, `numpy`, `torch`, `pycaw`, `comtypes`, `mss`, `pillow`, `pystray`, `pynput`, `pyautogui` и пр. | — |
+| `requirements-gigaam.txt` | Опциональные зависимости GigaAM-v3 (`hydra-core`, `omegaconf`, `sentencepiece`); пакет `gigaam` намеренно не ставится (требует numpy 2.x). | — |
+| `requirements.txt` | pip-зависимости: `openai-whisper`, `silero-vad`, `silero`, `TTS` (Coqui XTTS), `pydantic`, `tomli`/`tomli_w`, `PySide6`, `sounddevice`, `soundfile`, `numpy`, `torch`, `pycaw`, `comtypes`, `mss`, `pillow`, `pystray`, `pynput`, `pyautogui` и пр. | — |
 | `settings.toml.example` | Шаблон пользовательских настроек: закомментированные поля по секциям. Копируется в `settings.toml` (не коммитится). | — |
 | `CLAUDE.md` | Инструкции для Claude Code по проекту. | — |
 | `CHANGELOG.md` | Хронология изменений (Keep-a-Changelog), активная секция `[Unreleased]`. | — |
@@ -74,6 +76,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `soft-sniffing-allen.md` | План редизайна UI (этапы 1–8 миграции config + PySide6-дашборд). | — |
 | `LLM_report.md` | Сгенерированный отчёт по LLM. | — |
 | `claude_start.bat` / `go.bat` / `gitpush.bat` / `ЯMake_llm_report.bat` | Локальные BAT-лаунчеры. | — |
+| `install_and_test.bat` | Установка и проверка окружения: CUDA-сборка PyTorch (закрепляется constraints-файлом, чтобы pip её не заменил), `requirements.txt`, опционально GigaAM-v3 (`requirements-gigaam.txt` + torchaudio под версию torch, по желанию — скачивание весов), `scripts/check_environment.py`, `pytest -m "not slow and not gpu"`, по желанию — ручная проверка фильтров с микрофоном. | `install_and_test.bat [--yes] [--no-gigaam] [--no-tests]`. |
 | `Полный список голосовых команд.txt`, `новые фичи.txt`, `список пожеланий.txt`, `гитхаб.txt` | Заметки/TODO пользователя. | — |
 
 > **Примечание:** `check_stage_<N>.py` (этапы 5–8, M4/M6/M8) удалены после ручной приёмки — стейджи приняты. Дорожная карта и спецификация переехали в `docs/` (`docs/MIGRATION_PLAN.md`, `docs/VOICE_AI_PROJECT_SPECIFICATION.md`).
@@ -86,7 +89,10 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `core/base.py` | ABC для инверсии управления: `STTProvider`, `LLMProvider`, `TTSProvider`. | `abc.ABC`, `abstractmethod`. |
 | `core/audio_stream.py` | `AudioStream` — фоновый микрофонный reader на `sounddevice`. Считает per-chunk RMS (int16), держит скользящий `noise_floor`, выдаёт `(rms, percent)` в bounded queue для UI; `chunk_queue` питает VAD. | `sounddevice.InputStream`, `queue.Queue`, `numpy`. |
 | `core/vad.py` | `VoiceActivityDetector` — `calibrate()`, `record_until_silence()`. Адаптивный drift порога к шуму. | `numpy`, `wave`. |
-| `core/stt.py` | `WhisperSTT` — `load_model()` / `transcribe(path)` / `unload_model()`. После unload — `gc.collect()` + `torch.cuda.empty_cache()`. | `openai-whisper`, `torch`. |
+| `core/stt.py` | `WhisperSTT` — `load_model()` / `transcribe(path, profile)` / `unload_model()`. Текст чистится `clean_transcript()` по оценкам сегментов Whisper и настройкам `[stt.filter]`. После unload — `gc.collect()` + `torch.cuda.empty_cache()`. | `openai-whisper`, `torch`, `core.transcript_filter`. |
+| `core/gigaam_stt.py` | Опциональный `GigaAMSTT(STTProvider)` — GigaAM-v3 через `transformers` (`trust_remote_code`), `[stt.gigaam]`. Звук передаётся из памяти (ffmpeg не нужен), длинный звук режется по паузам `split_audio()` на куски ≤ 22 с. | `transformers`, `torch`, `core.transcript_filter`. |
+| `core/speech_gate.py` | `SpeechGate` — Silero VAD перед STT: `filter_file()` → `GateResult` (нет речи → `path=None`; есть — обрезка тишины по краям во временный `*.speech.wav`). Без `silero-vad` пропускает звук. Общий экземпляр `get_speech_gate()`; настройки `[speech_gate]` читаются при каждом вызове. | `silero-vad`, `torch`, `soundfile`. |
+| `core/transcript_filter.py` | `clean_transcript()` — очистка текста STT: `filter_segments()` по оценкам Whisper, `deloop()`, `strip_hallucinations()` (сильные фразы субтитров — всегда; слабые «Спасибо», «Пока» — в командах или при сомнении модели). Без зависимостей от моделей. | `re`. |
 | `core/llm.py` | `OllamaLLM(LLMProvider)` — авто-детект thinking-моделей (3× токенов), `generate()` чистит результат через `clean_llm_response()`. | `core.ollama_client`, `core.prompt_manager`. |
 | `core/llm_errors.py` | Таксономия `LLMErrorKind` для Ollama + LM Studio. `classify_http_error()`. | `enum.Enum`, `requests.exceptions`. |
 | `core/ollama_client.py` | HTTP-клиент Ollama: `generate()`, `list_models()`, `is_running()`. Retry с backoff. | `requests`, `core.llm_errors`. |
@@ -96,7 +102,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `core/tts_utils.py` | Хелперы TTS: резолвинг пути к speaker-WAV, генерация уникального имени выходного WAV. | `pathlib.Path`, `datetime`. |
 | `core/audio_output.py` | `AudioPlayer` — проигрывание WAV / numpy-массива через `sounddevice`, блокирующе до конца. | `sounddevice.play`, `soundfile.read`. |
 | `core/audio_beep.py` | `generate_beep()` — синусоидальный beep с fade-in/out. Для wake-word / dictate-стартера. | `numpy`. |
-| `core/wake_word.py` | `WakeWordListener` — daemon-поток: окна по 2–4 сек через Whisper, match против `WAKE_WORD` + алиасов, на срабатывание — beep + ack + callback. `contains_wake_word()`, `_normalize()` — чистые функции, покрыты тестами. | `threading`, `WhisperSTT`, `core.audio_stream`. |
+| `core/wake_word.py` | `WakeWordListener` — daemon-поток: окна по 2–4 сек через Whisper (окна без речи отсекает `SpeechGate`, `[speech_gate] wake_scan`), match против `WAKE_WORD` + алиасов, на срабатывание — beep + ack + callback. `contains_wake_word()`, `_normalize()` — чистые функции, покрыты тестами. | `threading`, `WhisperSTT`, `core.audio_stream`. |
 | `core/preprocessing.py` | `compute_rms_file()` — файловый RMS для калибровок (int16 domain). | `numpy`, `soundfile`. |
 | `core/prompt_manager.py` | `clean_llm_response()` — снимает `<think>`, harmony-каналы, `Thinking Process:`. `detect_thinking_markers()`. | `re`. |
 
@@ -165,7 +171,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 |---|---|
 | `app.py`, `__main__.py` | Запуск нового интерфейса и предпросмотр без ядра. |
 | `window.py` | Оболочка, навигация и расширяемый реестр `PageSpec`. |
-| `pages.py` | Обзор, история с поиском/экспортом, каталог команд, настройки. |
+| `pages.py` | Обзор, история с поиском/экспортом, каталог команд, настройки (включая карточку «Распознавание речи»: выбор Whisper/GigaAM, переключатели фильтра речи и очистки галлюцинаций). |
 | `components.py`, `theme.py` | Переиспользуемые компоненты, индикаторы, палитра и QSS. |
 | `backend.py` | Фоновая интеграция с `VoicePipeline`, IPC и wake-word; Qt-сигналы для страниц. |
 | `docs/modern_ui.md` | Архитектура, запуск и пример добавления страницы. |
@@ -217,6 +223,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 
 | Файл | Назначение | Запуск |
 |---|---|---|
+| `scripts/check_environment.py` | Проверка окружения: версия Python, ключевые пакеты, numpy 1.x, CUDA-сборка PyTorch против устройств из `settings.toml`, Silero VAD на настоящей модели (шум отсекается, ваша запись речи `logs/stage9/take1_raw.wav` проходит). Код выхода 1 при ошибках. | `python scripts/check_environment.py [--gigaam]`. |
 | `scripts/command_stats.py` | Статистика использования команд из `logs/recognized.log` (по команде/синониму, с фильтром по дате). | `python -m scripts.command_stats [--by synonym] [--since DATE]`. |
 | `scripts/dump_commands_snapshot.py` | Сериализация `CommandRegistry` (name, synonyms, command_type) в `tests/fixtures/commands_snapshot.json` — baseline для `test_commands_registry.py`. | `python scripts/dump_commands_snapshot.py`. |
 | `scripts/dump_config_snapshot.py` | Сериализация всех констант `config.py` в `tests/fixtures/config_snapshot_baseline.json` — baseline для `test_config_contract.py` (Path сериализуются относительно корня). | `python scripts/dump_config_snapshot.py`. |
@@ -237,7 +244,9 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | Файл | Назначение |
 |---|---|
 | `tests/__init__.py` | — |
-| `tests/conftest.py` | Общие фикстуры/хуки: моки провайдеров STT/LLM/TTS и зависимостей `VoicePipeline` (AudioStream, AudioPlayer, VAD, менеджеры). Используются `test_pipeline_smoke.py`. |
+| `tests/conftest.py` | Общие фикстуры/хуки: моки провайдеров STT/LLM/TTS и зависимостей `VoicePipeline` (AudioStream, AudioPlayer, VAD, менеджеры). Используются `test_pipeline_smoke.py`. Autouse-фикстура `disabled_speech_gate` выключает общий Silero VAD, чтобы тесты не грузили модель. |
+| `tests/test_speech_filters.py` | `SpeechGate` с поддельным детектором (тишина, короткий звук, обрезка, ресемплинг, отказоустойчивость), очистка текста, оценки сегментов Whisper, интеграция с `SpeechRuntime`, поиском кодового слова и `VoicePipeline`, настройки. |
+| `tests/test_gigaam_stt.py` | `GigaAMSTT` на поддельных `torch`/`transformers`: загрузка с `revision`, обход ffmpeg, нарезка длинного звука, фильтр, ошибки зависимостей и CUDA. |
 | `tests/test_wake_word.py` | Юнит-тесты `core.wake_word._normalize` / `contains_wake_word`. |
 | `tests/test_reminder_listing.py` | Тесты `core.reminders.listing`: склонения, порядковые, остаток времени, сборка фразы. |
 | `tests/test_commands_registry.py` | Контракт `CommandRegistry` против snapshot'а + инвариант «≥2 слов». |

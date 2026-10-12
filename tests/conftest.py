@@ -21,6 +21,25 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def disabled_speech_gate():
+    """Тесты не загружают Silero VAD: общий фильтр речи по умолчанию выключен.
+
+    Иначе на машине с установленным ``silero-vad`` синтетические сигналы
+    тестов проверялись бы настоящей моделью. Тесты фильтра создают свой
+    ``SpeechGate`` с поддельным детектором.
+    """
+    from types import SimpleNamespace
+
+    from core.speech_gate import SpeechGate, set_speech_gate
+
+    gate = SpeechGate(SimpleNamespace(enabled=False, wake_scan=False, threshold=0.5,
+                                      min_speech_ms=250, speech_pad_ms=200, min_silence_ms=300))
+    set_speech_gate(gate)
+    yield gate
+    set_speech_gate(None)
+
+
 @pytest.fixture
 def screenshot_png() -> bytes:
     """Deterministic screen-sized PNG without screen capture hardware."""

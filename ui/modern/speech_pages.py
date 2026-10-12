@@ -17,6 +17,8 @@ def model_description(kind):
     from config import settings
     if kind == "stt":
         stt = settings.stt
+        if stt.provider.lower() == "gigaam":
+            return f"GigaAM-v3 · {stt.gigaam.revision} · {stt.gigaam.device}"
         return f"Whisper · {stt.whisper_model_size} · {stt.whisper_device}"
     # Existing config shim is the provider factories' source of truth.
     from config import TTS_PROVIDER, SILERO_SPEAKER, SILERO_DEVICE, TTS_DEVICE

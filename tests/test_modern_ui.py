@@ -134,6 +134,81 @@ def test_note_journal_preview_never_saves(app, journal_settings, tmp_path):
         app.processEvents()
 
 
+@pytest.fixture
+def speech_settings(monkeypatch, tmp_path):
+    import config
+    import config_model
+
+    path = tmp_path / "settings.toml"
+    path.write_text("[llm]\ntimeout = 173\n", encoding="utf-8")
+    monkeypatch.setattr(config_model, "SETTINGS_TOML_PATH", path)
+    monkeypatch.setattr(config.settings.speech_gate, "enabled", True)
+    monkeypatch.setattr(config.settings.stt.filter, "enabled", True)
+    monkeypatch.setattr(config.settings.stt, "provider", "whisper")
+    return path
+
+
+def test_speech_filters_apply_live_and_provider_after_restart(speech_settings, app):
+    import config
+    from config_model import load_settings
+
+    backend = AssistantBackend(with_ipc=False)
+    window = ModernWindow(backend, settings=QSettings(str(speech_settings.parent / "ui.ini"), QSettings.IniFormat))
+    try:
+        prefs = window.preferences
+        assert prefs.speech_gate.isChecked() and prefs.stt_filter.isChecked()
+        assert prefs.stt_provider.currentData() == "whisper"
+        prefs.speech_gate.setChecked(False)
+        prefs.stt_filter.setChecked(False)
+        assert not config.settings.speech_gate.enabled
+        assert not config.settings.stt.filter.enabled
+        prefs.stt_provider.setCurrentIndex(prefs.stt_provider.findData("gigaam"))
+        saved = load_settings(speech_settings)
+        assert saved.stt.provider == "gigaam"
+        assert not saved.speech_gate.enabled and not saved.stt.filter.enabled
+        assert saved.llm.timeout == 173
+        assert config.settings.stt.provider == "whisper"
+        assert "перезапуска" in prefs.stt_provider_status.text()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_speech_filter_failure_rolls_back(speech_settings, window, monkeypatch):
+    from pathlib import Path
+
+    import config
+
+    previous = speech_settings.read_bytes()
+    monkeypatch.setattr(Path, "replace", lambda path, target: (_ for _ in ()).throw(PermissionError("locked")))
+    window.preferences.speech_gate.setChecked(False)
+    assert window.preferences.speech_gate.isChecked()
+    assert config.settings.speech_gate.enabled
+    window.preferences.stt_provider.setCurrentIndex(window.preferences.stt_provider.findData("gigaam"))
+    assert window.preferences.stt_provider.currentData() == "whisper"
+    assert speech_settings.read_bytes() == previous
+
+
+def test_speech_settings_preview_never_saves(app, speech_settings, tmp_path):
+    backend = AssistantBackend(with_ipc=False)
+    for name in ("set_speech_gate_enabled", "set_stt_filter_enabled", "set_stt_provider"):
+        setattr(backend, name, Mock())
+    preview = ModernWindow(backend, preview=True,
+                           settings=QSettings(str(tmp_path / "speech-preview.ini"), QSettings.IniFormat))
+    previous = speech_settings.read_bytes()
+    try:
+        preview.preferences.speech_gate.setChecked(False)
+        preview.preferences.stt_filter.setChecked(False)
+        preview.preferences.stt_provider.setCurrentIndex(1)
+        backend.set_speech_gate_enabled.assert_not_called()
+        backend.set_stt_filter_enabled.assert_not_called()
+        backend.set_stt_provider.assert_not_called()
+        assert speech_settings.read_bytes() == previous
+    finally:
+        preview.close()
+        app.processEvents()
+
+
 def test_note_journal_open_missing_and_existing_file(journal_settings, window, monkeypatch, tmp_path):
     import config
     from datetime import datetime

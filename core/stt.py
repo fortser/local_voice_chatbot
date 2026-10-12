@@ -11,15 +11,17 @@ Single-model wrapper around ``openai-whisper``:
     empty_cache()`` so VRAM is actually freed for the GPU swap with XTTS in
     Stage 4.
 
-We intentionally keep this dumb: no streaming, no multi-language routing, no
-VAD-inside-VAD. The pipeline already hands us a clean utterance WAV.
+We intentionally keep this dumb: no streaming, no multi-language routing.
+Silence is screened out before us by ``core/speech_gate`` (Silero VAD); the
+text Whisper returns is cleaned by ``core/transcript_filter`` using Whisper's
+own per-segment scores (``no_speech_prob``, ``avg_logprob``,
+``compression_ratio``) plus a list of typical subtitle hallucinations.
 """
 
 from __future__ import annotations
 
 import gc
 import logging
-import re
 import sys
 import time
 from pathlib import Path
@@ -35,48 +37,13 @@ from config import (
     WHISPER_MODEL_SIZE,
 )
 from core.base import STTProvider, model_device
+from core.transcript_filter import SegmentInfo, clean_transcript
 from utils.errors import STTError
 
 # Whisper expects audio at this rate. Anything else gets resampled by us.
 _WHISPER_SR = 16000
 
 logger = logging.getLogger(__name__)
-
-# Известные фразы-галлюцинации русскоязычного Whisper (особенно large-v3)
-# на тишине / очень коротком / шумном входе. Возникают потому, что модель
-# обучалась на YouTube-субтитрах, где такие концовки частотны. Если
-# транскрипция после нормализации совпадает ровно с одной из этих фраз —
-# считаем это «неречью» и возвращаем пустую строку.
-_HALLUCINATION_PHRASES: frozenset[str] = frozenset(
-    _p.strip() for _p in [
-        "продолжение следует",
-        "спасибо за просмотр",
-        "субтитры делал dimatorzok",
-        "субтитры подготовил dimatorzok",
-        "субтитры сделал dimatorzok",
-        "субтитры подготовил",
-        "субтитры сделал",
-        "субтитры делал",
-        "редактор субтитров",
-        "корректор",
-        "игорь дмитриев",
-        "субтитры создавал dimatorzok",
-        "подписывайтесь на канал",
-        "ставьте лайки",
-        "спасибо за внимание",
-    ]
-)
-
-_NORMALIZE_RE = re.compile(r"[^\w\s]+", flags=re.UNICODE)
-
-
-def _is_hallucination(text: str) -> bool:
-    """True iff ``text`` после нормализации совпадает с известной фразой-галлюцинацией."""
-    if not text:
-        return False
-    normalized = _NORMALIZE_RE.sub(" ", text.lower()).strip()
-    normalized = " ".join(normalized.split())
-    return normalized in _HALLUCINATION_PHRASES
 
 
 def _vram_snapshot() -> str:
@@ -102,12 +69,23 @@ class WhisperSTT(STTProvider):
         device: str = WHISPER_DEVICE,
         language: str = WHISPER_LANGUAGE,
         download_root: str | Path = MODELS_DIR,
+        filter_settings=None,
     ) -> None:
         self._model_size = model_size
         self._device = device
         self._language = language
         self._download_root = Path(download_root)
+        self._filter_settings = filter_settings
         self._model = None
+
+    @property
+    def filter_settings(self):
+        """Секция ``[stt.filter]``; читается при каждом вызове (переключатель в UI)."""
+        if self._filter_settings is None:
+            from config import settings
+
+            return settings.stt.filter
+        return self._filter_settings
 
     # ---- STTProvider ----
 
@@ -211,10 +189,22 @@ class WhisperSTT(STTProvider):
         logger.info(
             "Transcription done in %.2fs: %r", elapsed, text[:120] + ("…" if len(text) > 120 else "")
         )
-        if profile == "command" and _is_hallucination(text):
-            logger.info("Filtered Whisper hallucination phrase: %r → ''", text)
-            return ""
-        return text
+        segments = [
+            SegmentInfo.from_whisper(segment)
+            for segment in (result.get("segments") or [])
+            if isinstance(segment, dict)
+        ]
+        for segment in segments:
+            logger.debug("Whisper segment %r: %s", segment.text.strip()[:80], segment.describe())
+        outcome = clean_transcript(
+            text, segments=segments or None, profile=profile, cfg=self.filter_settings
+        )
+        if outcome.changed:
+            logger.info(
+                "Фильтр галлюцинаций (%s): %r → %r; %s",
+                profile, text[:120], outcome.text[:120], "; ".join(outcome.removed),
+            )
+        return outcome.text
 
     def unload_model(self) -> None:
         if self._model is None:

@@ -64,8 +64,9 @@ class SpeechRuntime:
 
     def __init__(self, *, stt_factory=None, tts_factory=None,
                  stream_factory=None, player_factory=None, vad_factory=None,
-                 gpu_swap: bool | None = None) -> None:
+                 gpu_swap: bool | None = None, speech_gate=None) -> None:
         self.lock = threading.RLock()
+        self._speech_gate = speech_gate
         self._stt_factory = stt_factory
         self._tts_factory = tts_factory
         self._stream_factory = stream_factory
@@ -104,6 +105,14 @@ class SpeechRuntime:
         return self._player
 
     @property
+    def speech_gate(self):
+        """Silero VAD перед распознаванием; общий с ассистентом по умолчанию."""
+        if self._speech_gate is None:
+            from core.speech_gate import get_speech_gate
+            self._speech_gate = get_speech_gate()
+        return self._speech_gate
+
+    @property
     def gpu_swap(self) -> bool:
         if self._gpu_swap is None:
             from config import TTS_PROVIDER, TTS_DEVICE, SILERO_DEVICE
@@ -135,6 +144,8 @@ class SpeechRuntime:
         if not self.stt.is_loaded:
             stage("Загружаю распознавание речи…")
             self.stt.load_model()
+        # Silero VAD грузится один раз (доли секунды); при сбое — без фильтра.
+        self.speech_gate.preload()
 
     def ensure_microphone(self, stage=lambda message: None) -> None:
         if self.stream.is_running and self.vad is not None:
@@ -169,10 +180,20 @@ class SpeechRuntime:
 
     def transcribe(self, path: str, cancel: threading.Event,
                    stage=lambda message: None) -> str:
+        """Фильтр речи → STT. Фрагмент без речи возвращает пустую строку."""
+        from core.speech_gate import discard
+
         self.ensure_stt(stage)
         check_cancel(cancel)
-        stage("Распознаю речь…")
-        result = self.stt.transcribe(path, profile="dictation").strip()
+        gate = self.speech_gate.filter_file(path, purpose="речевые инструменты")
+        if not gate.has_speech:
+            return ""
+        try:
+            check_cancel(cancel)
+            stage("Распознаю речь…")
+            result = self.stt.transcribe(gate.path, profile="dictation").strip()
+        finally:
+            discard(gate)
         check_cancel(cancel)
         return result
 

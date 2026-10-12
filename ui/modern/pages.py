@@ -145,7 +145,7 @@ class OverviewPage(QWidget):
             details = ""
             if key in {"stt", "tts"}:
                 provider = str(data.get("provider") or "")
-                provider = {"WhisperSTT": "Whisper", "SileroTTS": "Silero", "XTSTTTS": "XTTS"}.get(provider, provider)
+                provider = {"WhisperSTT": "Whisper", "GigaAMSTT": "GigaAM", "SileroTTS": "Silero", "XTSTTTS": "XTTS"}.get(provider, provider)
                 model = str(data.get("model") or "—")
                 device = str(data.get("device") or "").lower()
                 mode = "GPU" if device.startswith(("cuda", "gpu")) else "CPU" if device == "cpu" else "—"
@@ -334,6 +334,12 @@ class CommandsPage(QWidget):
             QApplication.clipboard().setText(item.data(Qt.UserRole))
 
 
+STT_PROVIDER_TITLES = (
+    ("whisper", "Whisper (OpenAI) — по умолчанию"),
+    ("gigaam", "GigaAM-v3 (Сбер) — только русский, меньше галлюцинаций"),
+)
+
+
 class SettingsPage(QWidget):
     def __init__(self, context) -> None:
         super().__init__()
@@ -366,6 +372,33 @@ class SettingsPage(QWidget):
         self.audio_status = label("Параметры аудио появятся после запуска", "muted")
         audio.body.addWidget(self.audio_status)
         layout.addWidget(audio)
+
+        speech = Card("Распознавание речи")
+        speech.body.addWidget(label("Модель распознавания. Смена применяется после перезапуска программы.", "muted"))
+        self.stt_provider = QComboBox()
+        self.stt_provider.setAccessibleName("Модель распознавания речи")
+        for value, title in STT_PROVIDER_TITLES:
+            self.stt_provider.addItem(title, value)
+        index = self.stt_provider.findData(context.backend.saved_stt_provider)
+        self.stt_provider.setCurrentIndex(max(0, index))
+        self.stt_provider.currentIndexChanged.connect(self._stt_provider)
+        speech.body.addWidget(self.stt_provider)
+        self.stt_provider_status = label("", "muted")
+        self.stt_provider_status.setWordWrap(True)
+        speech.body.addWidget(self.stt_provider_status)
+        self.speech_gate = QCheckBox("Не распознавать звук без речи (нейросетевой фильтр Silero VAD)")
+        self.speech_gate.setChecked(context.backend.speech_gate_enabled)
+        self.speech_gate.toggled.connect(self._speech_gate)
+        speech.body.addWidget(self.speech_gate)
+        self.stt_filter = QCheckBox("Удалять типичные галлюцинации («Продолжение следует», «Спасибо за просмотр»)")
+        self.stt_filter.setChecked(context.backend.stt_filter_enabled)
+        self.stt_filter.toggled.connect(self._stt_filter)
+        speech.body.addWidget(self.stt_filter)
+        self.speech_filters_status = label("", "muted")
+        self.speech_filters_status.setWordWrap(True)
+        speech.body.addWidget(self.speech_filters_status)
+        layout.addWidget(speech)
+        self._update_speech_status()
 
         appearance = Card("Интерфейс")
         self.animation = QCheckBox("Анимация голосового индикатора")
@@ -424,6 +457,51 @@ class SettingsPage(QWidget):
         if not self.context.preview:
             self.context.settings.setValue("animation", enabled)
         self.context.overview.orb.set_animated(enabled)
+
+    def _update_speech_status(self) -> None:
+        backend = self.context.backend
+        chosen = self.stt_provider.currentData()
+        lines = []
+        if chosen == backend.active_stt_provider:
+            lines.append("Используется сейчас.")
+        else:
+            lines.append("Будет использована после перезапуска программы.")
+        if chosen == "gigaam":
+            missing = backend.missing_packages("gigaam")
+            if missing:
+                lines.append("Не хватает пакетов: " + ", ".join(missing)
+                             + ". Установите: pip install -r requirements-gigaam.txt")
+            else:
+                lines.append("Только русский язык. Веса скачиваются при первом запуске в папку models/gigaam.")
+        self.stt_provider_status.setText(" ".join(lines))
+        notes = ["Фильтры действуют сразу. Пороги и свои фразы — в settings.toml, секции [speech_gate] и [stt.filter]."]
+        if self.speech_gate.isChecked() and backend.missing_packages("speech_gate"):
+            notes.insert(0, "Пакет silero-vad не установлен — фильтр речи пропускает звук без проверки. "
+                            "Установите: pip install silero-vad")
+        self.speech_filters_status.setText(" ".join(notes))
+
+    def _restore(self, widget, value) -> None:
+        widget.blockSignals(True)
+        if isinstance(widget, QComboBox):
+            widget.setCurrentIndex(max(0, widget.findData(value)))
+        else:
+            widget.setChecked(value)
+        widget.blockSignals(False)
+
+    def _stt_provider(self, _index: int) -> None:
+        value = self.stt_provider.currentData()
+        if not self.context.preview and not self.context.backend.set_stt_provider(value):
+            self._restore(self.stt_provider, self.context.backend.saved_stt_provider)
+        self._update_speech_status()
+
+    def _speech_gate(self, enabled: bool) -> None:
+        if not self.context.preview and not self.context.backend.set_speech_gate_enabled(enabled):
+            self._restore(self.speech_gate, self.context.backend.speech_gate_enabled)
+        self._update_speech_status()
+
+    def _stt_filter(self, enabled: bool) -> None:
+        if not self.context.preview and not self.context.backend.set_stt_filter_enabled(enabled):
+            self._restore(self.stt_filter, self.context.backend.stt_filter_enabled)
 
     def _note_journal(self, enabled: bool) -> None:
         if self.context.preview:

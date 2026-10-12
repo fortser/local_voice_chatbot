@@ -40,7 +40,11 @@ class STTProvider(ABC):
 
     @abstractmethod
     def transcribe(self, audio_path: str, *, profile: str = "command") -> str:
-        """Transcribe audio; ``dictation`` omits command hints and phrase filtering."""
+        """Transcribe audio and clean hallucinations (``core/transcript_filter``).
+
+        ``dictation`` omits command hints and keeps short everyday phrases
+        («Спасибо») unless the model itself doubts there was speech.
+        """
 
     @abstractmethod
     def unload_model(self) -> None:

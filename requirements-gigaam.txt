@@ -1,0 +1,21 @@
+# ====== Опционально: распознавание речи GigaAM-v3 (Сбер) ======
+# Включение: [stt] provider = "gigaam" в settings.toml или Modern UI →
+# «Настройки» → «Распознавание речи» (после перезапуска).
+#
+# Установка в тот же Python, что и основной проект:
+#   pip install -r requirements-gigaam.txt
+#
+# torch и transformers уже есть в requirements.txt. Официальный пакет
+# `gigaam` НЕ ставим: он требует numpy 2.x, а проект закреплён на numpy 1.26.
+# Модель грузится через transformers (trust_remote_code) из репозитория
+# ai-sage/GigaAM-v3; веса (при первом запуске) — в models/gigaam.
+#
+# Модуль модели импортирует torchaudio. Если его нет, ставьте версию,
+# совпадающую с установленным torch и его CUDA-сборкой, например:
+#   pip install torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+# (версию torch смотрите: python -c "import torch; print(torch.__version__)").
+# ffmpeg не нужен: звук передаётся модели из памяти.
+
+hydra-core>=1.3,<1.4
+omegaconf>=2.3,<2.4
+sentencepiece>=0.2

@@ -8,9 +8,9 @@
 # дефолту.
 #
 # Формат: TOML. Секции совпадают с нижним регистром из
-# docs/config_migration_map.md (paths, audio, vad, deepfilter, stt, llm,
-# llm.ollama, llm.lmstudio, tts, tts.silero, tts.xtts, wake_word,
-# commands, dictate, ui, reminders, ipc, logging).
+# docs/config_migration_map.md (paths, audio, vad, deepfilter, speech_gate,
+# stt, stt.filter, stt.gigaam, llm, llm.ollama, llm.lmstudio, tts, tts.silero,
+# tts.xtts, wake_word, commands, dictate, ui, reminders, ipc, logging).
 
 # --- Пути / сессии ------------------------------------------------------------
 # [paths]
@@ -31,9 +31,47 @@
 
 # --- STT / Whisper ------------------------------------------------------------
 # [stt]
+# provider = "whisper"                    # или "gigaam" — GigaAM-v3 (Сбер), только
+#                                         # русский; зависимости: requirements-gigaam.txt.
+#                                         # Переключатель есть в Modern UI → «Настройки»;
+#                                         # смена модели — после перезапуска.
 # whisper_model_size = "large-v3-turbo"   # или "large-v3" для максимального качества
 # whisper_device = "cuda"                 # "cpu" если нет CUDA
 # whisper_language = "russian"
+
+# [stt.gigaam]
+# model = "ai-sage/GigaAM-v3"
+# revision = "e2e_rnnt"                   # e2e_rnnt / e2e_ctc — с пунктуацией;
+#                                         # rnnt / ctc — без пунктуации
+# device = "cuda"                         # "cpu" если нет CUDA
+# max_chunk_s = 22.0                      # модель принимает до 25 с; длиннее — режем по паузам
+
+# --- Фильтр речи перед распознаванием (Silero VAD) ----------------------------
+# Фрагменты без речи (тишина, щелчки, дыхание) не отправляются в Whisper —
+# главная защита от «Продолжение следует…». Нужен пакет silero-vad.
+# [speech_gate]
+# enabled = true
+# threshold = 0.5                         # 0..1: выше — строже к шуму, но может
+#                                         # пропускать тихую речь
+# min_speech_ms = 250                     # меньше речи во фрагменте — не распознаём
+# speech_pad_ms = 200                     # запас вокруг найденной речи
+# min_silence_ms = 300                    # паузы короче не разрывают речь
+# wake_scan = true                        # проверять и окна поиска кодового слова
+
+# --- Очистка текста от галлюцинаций -------------------------------------------
+# Сегменты Whisper с признаками неречи отбрасываются, типовые фразы субтитров
+# вырезаются, зацикленные повторы схлопываются. Решения пишутся в
+# logs/voice_ai.log (строки «Фильтр галлюцинаций», «Фильтр речи»).
+# [stt.filter]
+# enabled = true                          # false — текст модели без обработки
+# no_speech_threshold = 0.6               # отбросить сегмент, если no_speech_prob
+# logprob_threshold = -0.5                # выше порога И avg_logprob ниже порога
+# no_speech_hard_threshold = 0.9          # отбросить сегмент при no_speech_prob выше
+# compression_ratio_threshold = 2.4       # выше — зацикленный повтор
+# suspicious_no_speech = 0.3              # «Спасибо», «Пока» в диктовке удаляются
+#                                         # только при таком сомнении модели
+# max_repeats = 3                         # больше повторов подряд — схлопнуть
+# extra_phrases = ["всем добра"]          # свои фразы-галлюцинации
 
 # --- LLM ----------------------------------------------------------------------
 # [llm]

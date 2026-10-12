@@ -48,6 +48,7 @@ from config import (
     WAKE_WORD_SCAN_WINDOW,
 )
 from core.audio_beep import generate_beep
+from core.speech_gate import GateResult, discard
 from system import keep_awake
 from utils.errors import AudioError, CancelledError, STTError, VoiceAIError
 
@@ -74,6 +75,20 @@ def _normalize(text: str) -> list[str]:
         return []
     cleaned = _WORD_BOUNDARY.sub(" ", text.lower())
     return [t for t in cleaned.split() if t]
+
+
+def _scan_gate(pipeline, wav: str) -> GateResult | None:
+    """Проверить окно сканирования фильтром речи; ``None`` — фильтр не применяется."""
+    gate = getattr(pipeline, "speech_gate", None)
+    if gate is None or not hasattr(gate, "filter_file"):
+        return None
+    try:
+        if not gate.settings.wake_scan:
+            return None
+    except AttributeError:
+        return None
+    result = gate.filter_file(wav, purpose="поиск кодового слова")
+    return result if isinstance(result, GateResult) else None
 
 
 def contains_wake_word(text: str, wake_word: str, aliases: Iterable[str] = ()) -> bool:
@@ -223,12 +238,20 @@ class WakeWordListener:
             if self._stop_event.is_set() or scan_cancel.is_set() or not self._enabled.is_set():
                 return
 
-            # 2. Transcribe scan and check for wake-word.
+            # 2. Transcribe scan and check for wake-word. Silero VAD отсекает
+            # окна без речи (щелчки, шум): Whisper на них не тратится и не
+            # выдумывает текст.
+            gate = _scan_gate(pipeline, scan_wav)
+            if gate is not None and not gate.has_speech:
+                return
             try:
-                text = pipeline.stt.transcribe(scan_wav).strip()
+                text = pipeline.stt.transcribe(gate.path if gate is not None else scan_wav).strip()
             except STTError:
                 logger.exception("Wake-word scan STT failed")
                 return
+            finally:
+                if gate is not None:
+                    discard(gate)
 
             if not text or self._stop_event.is_set() or scan_cancel.is_set() or not self._enabled.is_set():
                 return

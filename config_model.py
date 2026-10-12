@@ -97,11 +97,83 @@ class DeepFilterSettings(_Section):
     device: str = "cuda"
 
 
+class SpeechGateSettings(_Section):
+    """Нейросетевой фильтр речи Silero VAD перед распознаванием.
+
+    Фрагмент, в котором Silero нашёл меньше ``min_speech_ms`` речи, в модель
+    распознавания не отправляется: на тишине, щелчках и дыхании Whisper
+    выдаёт галлюцинации вроде «Продолжение следует». Найденная речь
+    обрезается по краям с запасом ``speech_pad_ms``. Без пакета
+    ``silero-vad`` фильтр пропускает звук как раньше и пишет предупреждение.
+    """
+
+    enabled: bool = True
+    # Вероятность речи для кадра 32 мс (0..1). Выше — строже к шуму.
+    threshold: float = Field(default=0.5, ge=0.05, le=0.95)
+    # Минимум речи во фрагменте и в одном куске речи, мс.
+    min_speech_ms: int = Field(default=250, ge=0, le=5000)
+    # Запас вокруг найденной речи, мс.
+    speech_pad_ms: int = Field(default=200, ge=0, le=2000)
+    # Паузы короче этого значения не разрывают кусок речи, мс.
+    min_silence_ms: int = Field(default=300, ge=0, le=5000)
+    # Применять фильтр к коротким окнам поиска кодового слова.
+    wake_scan: bool = True
+
+
+class STTFilterSettings(_Section):
+    """Очистка текста распознавания от галлюцинаций.
+
+    Работает для команд и для диктовки. Сегменты Whisper отбрасываются по
+    его собственным оценкам: вероятность отсутствия речи, средняя
+    уверенность и коэффициент сжатия (признак зацикленного повтора).
+    Затем вырезаются типовые фразы субтитров («Продолжение следует»,
+    «Спасибо за просмотр», «Субтитры сделал…») и схлопываются повторы.
+    ``enabled = false`` возвращает необработанный текст модели.
+    """
+
+    enabled: bool = True
+    # Сегмент отбрасывается, если no_speech_prob выше порога И
+    # avg_logprob ниже logprob_threshold.
+    no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    logprob_threshold: float = Field(default=-0.5, le=0.0)
+    # При no_speech_prob выше этого значения сегмент отбрасывается всегда.
+    no_speech_hard_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+    # Коэффициент сжатия выше порога — зацикленный повтор.
+    compression_ratio_threshold: float = Field(default=2.4, gt=1.0)
+    # Короткие «слабые» фразы («Спасибо», «Пока») в диктовке удаляются
+    # только если Whisper сам сомневается в речи (no_speech_prob выше порога).
+    suspicious_no_speech: float = Field(default=0.3, ge=0.0, le=1.0)
+    # Повтор одной и той же фразы больше этого числа раз подряд схлопывается.
+    max_repeats: int = Field(default=3, ge=1, le=20)
+    # Дополнительные фразы-галлюцинации: удаляются как отдельное предложение
+    # и в конце текста. Сравнение без регистра, «ё» и пунктуации.
+    extra_phrases: list[str] = Field(default_factory=list)
+
+
+class GigaAMSettings(_Section):
+    """Опциональная модель GigaAM-v3 (Сбер) — включается ``stt.provider = "gigaam"``.
+
+    Загружается через ``transformers`` с ``trust_remote_code``; веса
+    скачиваются при первом запуске в ``models/gigaam``. Зависимости —
+    ``requirements-gigaam.txt``.
+    """
+
+    model: str = "ai-sage/GigaAM-v3"
+    # e2e_rnnt / e2e_ctc — с пунктуацией; rnnt / ctc — без неё.
+    revision: str = "e2e_rnnt"
+    device: str = "cuda"
+    # Один вызов модели ограничен 25 с; длинный звук режется по паузам.
+    max_chunk_s: float = Field(default=22.0, gt=1.0, le=25.0)
+
+
 class STTSettings(_Section):
+    # "whisper" (по умолчанию) или "gigaam".
     provider: str = "whisper"
     whisper_model_size: str = "large-v3-turbo"
     whisper_device: str = "cuda"
     whisper_language: str = "russian"
+    filter: STTFilterSettings = Field(default_factory=STTFilterSettings)
+    gigaam: GigaAMSettings = Field(default_factory=GigaAMSettings)
 
 
 class OllamaSettings(_Section):
@@ -347,6 +419,7 @@ class Settings(_Section):
     audio: AudioSettings = Field(default_factory=AudioSettings)
     vad: VADSettings = Field(default_factory=VADSettings)
     deepfilter: DeepFilterSettings = Field(default_factory=DeepFilterSettings)
+    speech_gate: SpeechGateSettings = Field(default_factory=SpeechGateSettings)
     stt: STTSettings = Field(default_factory=STTSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
@@ -450,7 +523,10 @@ __all__ = [
     "AudioSettings",
     "VADSettings",
     "DeepFilterSettings",
+    "SpeechGateSettings",
     "STTSettings",
+    "STTFilterSettings",
+    "GigaAMSettings",
     "LLMSettings",
     "OllamaSettings",
     "LMStudioSettings",

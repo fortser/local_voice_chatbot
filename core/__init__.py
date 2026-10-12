@@ -21,6 +21,13 @@ def _make_whisper() -> STTProvider:
     return WhisperSTT()
 
 
+def _make_gigaam() -> STTProvider:
+    # Опционально: зависимости из requirements-gigaam.txt проверяются при load_model().
+    from core.gigaam_stt import GigaAMSTT
+
+    return GigaAMSTT()
+
+
 def _make_ollama() -> LLMProvider:
     from core.llm import OllamaLLM
 
@@ -47,6 +54,7 @@ def _make_silero() -> TTSProvider:
 
 _STT_FACTORIES: dict[str, Callable[[], STTProvider]] = {
     "whisper": _make_whisper,
+    "gigaam": _make_gigaam,
 }
 
 _LLM_FACTORIES: dict[str, Callable[[], LLMProvider]] = {
@@ -63,7 +71,8 @@ _TTS_FACTORIES: dict[str, Callable[[], TTSProvider]] = {
 def create_stt_provider(name: str | None = None) -> STTProvider:
     """Instantiate an STT provider by name.
 
-    ``name=None`` reads ``config.STT_PROVIDER`` (default: ``whisper``).
+    ``name=None`` reads ``config.STT_PROVIDER`` (default: ``whisper``;
+    optional: ``gigaam``).
     """
     key = (name or STT_PROVIDER).lower()
     try:
