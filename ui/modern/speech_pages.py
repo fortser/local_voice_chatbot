@@ -208,6 +208,7 @@ class STTPage(SpeechPage):
         self.save.setEnabled(text and available)
         if self.floating:
             self.floating.set_recording(self._recording, available)
+        self.context.set_dictation_active(self._recording)
 
     def start_recording(self, external=None):
         if not self.available():

@@ -472,6 +472,80 @@ def test_preview_disables_real_actions(app, tmp_path):
     window.close()
 
 
+def test_logo_assets_and_window_icon(window):
+    from ui.modern.theme import ICON_PATH, LOGO_PATH
+
+    assert LOGO_PATH.is_file() and ICON_PATH.is_file()
+    assert not window.logo.isHidden()
+    assert not window.windowIcon().isNull()
+
+
+def test_logo_glows_only_while_listening(window):
+    assert not window.logo.is_listening
+    for state in ("listening", "wake_heard", "wake_active"):
+        window.set_state(state)
+        assert window.logo.is_listening, state
+    for state in ("processing", "speaking", "standby_idle", "idle", "error"):
+        window.set_state(state)
+        assert not window.logo.is_listening, state
+
+
+def test_logo_runs_animation_only_while_listening(window):
+    logo = window.logo
+    assert not logo.is_animating
+    window.set_state("wake_active")
+    assert logo.is_animating
+    phase = logo._phase
+    logo._tick()
+    assert logo._phase > phase
+    window.preferences.animation.setChecked(False)
+    assert logo.is_listening and not logo.is_animating  # steady glow, no timer
+    window.preferences.animation.setChecked(True)
+    assert logo.is_animating
+    window.set_state("processing")
+    assert not logo.is_animating
+
+
+def test_dictation_lights_logo_independently_of_assistant(window, monkeypatch):
+    page = window.pages["stt"]
+    speech = page.backend
+    monkeypatch.setattr(speech, "start_dictation", lambda external=False: setattr(speech, "_busy", True) or True)
+    monkeypatch.setattr(speech, "stop_dictation", lambda: setattr(speech, "_busy", False))
+    page.start_recording(external=False)
+    assert window.logo.is_listening
+    window.set_state("idle")  # assistant idle must not switch off the dictation glow
+    assert window.logo.is_listening
+    page.stop_recording()
+    assert not window.logo.is_listening
+
+
+def test_logo_paints_full_compact_and_hidden(window):
+    logo = window.logo
+    full = logo.sizeHint().height()
+    assert full > 150
+    for listening in (False, True):
+        logo.set_listening(listening)
+        for height in (full, 100, 40):
+            logo.resize(logo.width(), height)
+            assert not logo.grab().isNull()
+    logo.set_listening(False)
+
+
+def test_short_window_shrinks_logo_not_navigation(app, tmp_path):
+    window = ModernWindow(AssistantBackend(), preview=True,
+                          settings=QSettings(str(tmp_path / "short.ini"), QSettings.IniFormat))
+    window.resize(1180, 680)
+    window.show()
+    app.processEvents()
+    assert window.logo.height() < window.logo.sizeHint().height()
+    for nav_button in window.nav_buttons.values():
+        assert nav_button.height() >= nav_button.sizeHint().height()
+    window.resize(1180, 900)
+    app.processEvents()
+    assert window.logo.height() == window.logo.sizeHint().height()
+    window.close()
+
+
 def test_model_selection_and_fatal_state(window):
     window.backend.ready.emit()
     window.backend.models_list.emit(["alpha", "beta"], "beta")

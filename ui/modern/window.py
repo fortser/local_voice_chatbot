@@ -14,10 +14,10 @@ from PySide6.QtWidgets import (
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from .components import button, label
+from .components import PixelLogo, app_icon, button, label
 from .pages import CommandsPage, HistoryPage, OverviewPage, SettingsPage
 from .speech_pages import STTPage, TTSPage
-from .theme import stylesheet
+from .theme import LOGO_PATH, SIDEBAR_WIDTH, stylesheet
 
 STATES = {
     "not_started": "Нажмите «Начать работу», чтобы запустить ассистента",
@@ -32,6 +32,9 @@ STATES = {
     "error": "Не удалось запустить ассистента", "stopped": "Ассистент остановлен",
     "switching_audio": "Переключаю аудиоустройство. Во время калибровки сохраняйте тишину…",
 }
+
+# The logo frame glows while the user's command is being heard (dictation glows too).
+LISTENING_STATES = frozenset({"listening", "wake_heard", "wake_active"})
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,10 @@ class ModernWindow(QMainWindow):
         self._audio_available = True
         self._closing = False
         self._stopped = False
+        self._assistant_listening = False
+        self._dictating = False
         self.setWindowTitle("Шурочка · Голосовой ассистент" + (" · Предпросмотр" if preview else ""))
+        self.setWindowIcon(app_icon())
         self.setMinimumSize(940, 680)
         self.resize(1180, 850)
         self.setStyleSheet(stylesheet())
@@ -83,13 +89,17 @@ class ModernWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(210)
+        sidebar.setFixedWidth(SIDEBAR_WIDTH)
         nav = QVBoxLayout(sidebar)
-        nav.setContentsMargins(20, 30, 20, 22)
-        nav.setSpacing(10)
+        nav.setContentsMargins(20, 28, 20, 22)
+        nav.setSpacing(7)
         nav.addWidget(label("шурочка", "title"))
         nav.addWidget(label("ГОЛОСОВОЙ АССИСТЕНТ", "eyebrow"))
-        nav.addSpacing(38)
+        nav.addSpacing(6)
+        # Shrinks (cropping to the face) or hides itself when the window is short.
+        self.logo = PixelLogo(LOGO_PATH, SIDEBAR_WIDTH - 40)
+        nav.addWidget(self.logo)
+        nav.addSpacing(8)
         nav.addWidget(label("РАБОЧЕЕ ПРОСТРАНСТВО", "muted"))
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -145,6 +155,7 @@ class ModernWindow(QMainWindow):
         self.overview = self.pages["overview"]
         self.preferences = self.pages["settings"]
         self.overview.orb.set_animated(self.preferences.animation.isChecked())
+        self.logo.set_animated(self.preferences.animation.isChecked())
 
         backend.state_changed.connect(self.set_state)
         backend.ready.connect(self._on_ready)
@@ -204,6 +215,8 @@ class ModernWindow(QMainWindow):
             text += f" · {detail}"
         self.overview.status.setText(text)
         self.overview.orb.set_active(name not in {"not_started", "idle", "standby_idle", "paused", "error", "stopped"})
+        self._assistant_listening = name in LISTENING_STATES
+        self._sync_logo()
         self.overview.start.setEnabled(not self._started and not self._ready and not self.preview
                                        and not self._closing and not self.backend.speech.busy)
         if self._ready:
@@ -224,6 +237,14 @@ class ModernWindow(QMainWindow):
             badge = {"error": "○  ОШИБКА", "stopped": "○  ОСТАНОВЛЕНА",
                      "not_started": "○  ОЖИДАНИЕ", "paused": "○  ПАУЗА"}
             self.badge.setText(badge.get(name, "●  ГОТОВА" if self.can_act else "○  В РАБОТЕ"))
+
+    def set_dictation_active(self, active: bool) -> None:
+        """Speech-to-text dictation is listening too, independently of the assistant."""
+        self._dictating = active
+        self._sync_logo()
+
+    def _sync_logo(self) -> None:
+        self.logo.set_listening(self._assistant_listening or self._dictating)
 
     def start_work(self) -> None:
         if self._started or self._ready or self.preview or self._closing or self.backend.speech.busy:

@@ -1,13 +1,13 @@
 """Reusable presentation components; no pipeline dependencies."""
 
-from math import cos, pi, sin
+from math import ceil, cos, pi, sin
 import time
 
-from PySide6.QtCore import QPointF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QConicalGradient, QIcon, QImage, QPainter, QPen, QRadialGradient
+from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from .theme import COLORS
+from .theme import COLORS, ICON_PATH, ICON_PNG_PATH
 
 
 def label(text: str, role: str = "", *, wrap: bool = True) -> QLabel:
@@ -24,6 +24,16 @@ def button(text: str, callback, role: str = "") -> QPushButton:
     widget.setCursor(Qt.PointingHandCursor)
     widget.clicked.connect(callback)
     return widget
+
+
+def app_icon() -> QIcon:
+    """Window and taskbar icon; an empty icon keeps Qt's default if assets are missing."""
+    for path in (ICON_PATH, ICON_PNG_PATH):
+        if path.is_file():
+            icon = QIcon(str(path))
+            if icon.availableSizes():
+                return icon
+    return QIcon()
 
 
 class Card(QFrame):
@@ -178,6 +188,175 @@ class VoiceOrb(QWidget):
             height = 8 + (16 + self._level * 42) * (0.3 + 0.7 * abs(sin(index * 0.8 + self._phase)))
             x = center.x() + (index - 3) * 11
             painter.drawLine(QPointF(x, center.y() - height / 2), QPointF(x, center.y() + height / 2))
+
+
+class PixelLogo(QWidget):
+    """Pixel-art portrait in a rounded frame; the frame glows while Shura listens.
+
+    While listening, a bright light runs clockwise around the frame and the inner
+    glow breathes. With animation disabled the frame simply glows steadily.
+
+    The sprite is stored at its native grid size. It is enlarged by an integer
+    factor without smoothing and only then fitted to the frame, so pixels stay
+    square and crisp at any frame width and Windows display scale. When the
+    sidebar is short the frame gets lower and the portrait is cropped from the
+    bottom, keeping the face and the hand at the ear.
+    """
+
+    BORDER = 2
+    RADIUS = 14
+    FACE_ROWS = 50      # sprite rows kept in the most compact form: face and hand
+    MIN_VISIBLE = 64    # below this height the logo is hidden entirely
+
+    def __init__(self, path, width: int) -> None:
+        super().__init__()
+        self._sprite = QImage(str(path))
+        self._hint_width = width
+        self._cache: tuple | None = None
+        self._listening = False
+        self._animated = True
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._tick)
+        # Never taller than the full portrait; free to shrink when the sidebar is short.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.setToolTip("Шурочка подслушивает…")
+        self.setAccessibleName("Логотип Шурочки")
+        if self._sprite.isNull():
+            self.hide()
+
+    @property
+    def is_listening(self) -> bool:
+        return self._listening
+
+    def _full_height(self, width: int) -> int:
+        if self._sprite.isNull() or self._sprite.width() == 0:
+            return 0
+        return round((width - 2 * self.BORDER) * self._sprite.height() / self._sprite.width()) + 2 * self.BORDER
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._hint_width, self._full_height(self._hint_width))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def set_listening(self, listening: bool) -> None:
+        if listening == self._listening:
+            return
+        self._listening = listening
+        self._phase = 0.0
+        self._sync_timer()
+
+    def set_animated(self, enabled: bool) -> None:
+        self._animated = enabled
+        self._sync_timer()
+
+    def _sync_timer(self) -> None:
+        if self.isVisible() and self._listening and self._animated:
+            self._timer.start()
+        else:
+            self._timer.stop()
+        self.update()
+
+    def _tick(self) -> None:
+        self._phase += 0.12
+        self.update()
+
+    @property
+    def is_animating(self) -> bool:
+        return self._timer.isActive()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._sync_timer()
+
+    def hideEvent(self, event) -> None:
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def _portrait(self, inner: QRectF, ratio: float) -> QImage:
+        """Sprite scaled to the frame width, cropped to the frame height, in device pixels."""
+        key = (inner.width(), inner.height(), ratio)
+        if self._cache and self._cache[0] == key:
+            return self._cache[1]
+        width = max(1, round(inner.width() * ratio))
+        height = max(1, round(inner.height() * ratio))
+        scale = width / self._sprite.width()
+        # Integer nearest-neighbour step first, then one smooth step: square pixels, soft-free.
+        step = max(1, ceil(scale))
+        big = self._sprite.scaled(self._sprite.width() * step, self._sprite.height() * step,
+                                  Qt.IgnoreAspectRatio, Qt.FastTransformation)
+        full_height = round(self._sprite.height() * scale)
+        scaled = big.scaled(width, full_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        # Crop from the bottom first; once only the face is left, trim the hair on top too.
+        face_height = round(self.FACE_ROWS * scale)
+        top = max(0, min(face_height - height, round(6 * scale))) if height < face_height else 0
+        portrait = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+        portrait.fill(Qt.transparent)
+        painter = QPainter(portrait)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(Qt.white)
+        radius = (self.RADIUS - self.BORDER) * ratio
+        painter.drawRoundedRect(QRectF(0, 0, width, height), radius, radius)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.drawImage(0, 0, scaled, 0, top, width, height)
+        painter.end()
+        portrait.setDevicePixelRatio(ratio)
+        self._cache = (key, portrait)
+        return portrait
+
+    # Running light around the frame: (position along the lap, brightness).
+    SWEEP = ((0.0, 1.0), (0.10, 0.85), (0.30, 0.35), (0.55, 0.18), (0.88, 0.18), (1.0, 1.0))
+
+    def _light_brush(self, frame: QRectF, alpha: float) -> QBrush:
+        accent = QColor(COLORS["accent"])
+        if not self._animated:
+            accent.setAlpha(int(alpha * 0.8))
+            return QBrush(accent)
+        # Qt angles grow counter-clockwise: a decreasing start angle moves the head clockwise
+        # and the gradient stops trail behind it as a fading tail.
+        sweep = QConicalGradient(frame.center(), -self._phase * 50)
+        for stop, level in self.SWEEP:
+            color = QColor(accent)
+            color.setAlpha(int(alpha * level))
+            sweep.setColorAt(stop, color)
+        return QBrush(sweep)
+
+    def paintEvent(self, event) -> None:
+        if self._sprite.isNull() or self.height() < self.MIN_VISIBLE:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        frame = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        b = self.BORDER
+        inner = QRectF(self.rect()).adjusted(b, b, -b, -b)
+        portrait = self._portrait(inner, self.devicePixelRatioF())
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(COLORS["surface"]))
+        painter.drawRoundedRect(frame, self.RADIUS, self.RADIUS)
+        painter.drawImage(inner.topLeft(), portrait)
+
+        accent = QColor(COLORS["accent"])
+        painter.setBrush(Qt.NoBrush)
+        if self._listening:
+            breath = 0.75 + 0.25 * sin(self._phase * 1.3) if self._animated else 1.0
+            # Inner glow: thin strokes fading away from the edge. While animated they
+            # share the running light, so a bright patch sweeps around the portrait.
+            steps = 12
+            for index in range(steps):
+                fade = (1 - index / steps) ** 2
+                inset = b + 0.6 + index * 1.1
+                painter.setPen(QPen(self._light_brush(frame, 150 * fade * breath), 1.3))
+                painter.drawRoundedRect(frame.adjusted(inset, inset, -inset, -inset),
+                                        max(2.0, self.RADIUS - inset * 0.7), max(2.0, self.RADIUS - inset * 0.7))
+            painter.setPen(QPen(self._light_brush(frame, 255), b + 1.5))
+        else:
+            accent.setAlpha(95)
+            painter.setPen(QPen(accent, 1.2))
+        painter.drawRoundedRect(frame.adjusted(b / 2, b / 2, -b / 2, -b / 2), self.RADIUS, self.RADIUS)
 
 
 class LevelMeter(QWidget):

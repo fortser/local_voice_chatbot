@@ -1,5 +1,13 @@
 """Design tokens: change the palette here, not inside page implementations."""
 
+from pathlib import Path
+
+BRANDING_DIR = Path(__file__).resolve().parents[2] / "assets" / "branding"
+LOGO_PATH = BRANDING_DIR / "shura_logo.png"  # rebuilt by scripts/build_logo_assets.py
+ICON_PATH = BRANDING_DIR / "shura_icon.ico"
+ICON_PNG_PATH = BRANDING_DIR / "shura_icon.png"
+SIDEBAR_WIDTH = 230
+
 COLORS = {
     "background": "#14191d", "sidebar": "#101518", "surface": "#1c2328",
     "raised": "#242d33", "border": "#303a40", "text": "#edf3f2",

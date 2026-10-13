@@ -14,7 +14,7 @@
 и моделей: `python -m ui.modern --preview`. Прежние окна доступны через
 `--ui tkinter` и `--ui pyside6`.
 
-![Новый интерфейс Шурочки](docs/modern_ui_preview.png)
+![Новый интерфейс Шурочки](docs/Screenshot_120.jpg)
 
 [Запуск, архитектура и добавление новых страниц](docs/modern_ui.md).
 

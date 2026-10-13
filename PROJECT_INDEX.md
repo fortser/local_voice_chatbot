@@ -173,7 +173,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `app.py`, `__main__.py` | Запуск нового интерфейса и предпросмотр без ядра. |
 | `window.py` | Оболочка, навигация и расширяемый реестр `PageSpec`. |
 | `pages.py` | Обзор, история с поиском/экспортом, каталог команд, настройки (включая карточку «Распознавание речи»: выбор Whisper/GigaAM, переключатели фильтра речи и очистки галлюцинаций). |
-| `components.py`, `theme.py` | Переиспользуемые компоненты, индикаторы, палитра и QSS. |
+| `components.py`, `theme.py` | Переиспользуемые компоненты, индикаторы, палитра и QSS. `PixelLogo` — пиксельный портрет Шурочки в скруглённой рамке боковой панели (чёткое масштабирование, обрезка до лица при низком окне, анимированная рамка — бегущий свет и «дыхание» — пока ассистент слушает или идёт диктовка; `ModernWindow.set_dictation_active()` вызывается страницей STT); `app_icon()` — иконка окна и панели задач. Пути к `assets/branding/` и ширина боковой панели — в `theme.py`. |
 | `backend.py` | Фоновая интеграция с `VoicePipeline`, IPC и wake-word; Qt-сигналы для страниц. |
 | `docs/modern_ui.md` | Архитектура, запуск и пример добавления страницы. |
 | `tests/test_modern_ui.py` | Автоматические проверки UI без микрофона, GPU и LLM. |
@@ -230,6 +230,8 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | `scripts/dump_config_snapshot.py` | Сериализация всех констант `config.py` в `tests/fixtures/config_snapshot_baseline.json` — baseline для `test_config_contract.py` (Path сериализуются относительно корня). | `python scripts/dump_config_snapshot.py`. |
 | `scripts/dump_voice_commands.py` | Печать эффективного реестра команд **после** применения TOML-overlay (`build_configured_registry()`). | `python -m scripts.dump_voice_commands`. |
 | `scripts/validate_voice_commands_config.py` | Валидация `config/voice_commands.toml` без запуска ассистента. | `python -m scripts.validate_voice_commands_config`. |
+| `scripts/build_logo_assets.py` | Пересборка логотипа и иконки из исходного AI-пиксель-арта: привязка к родной сетке ~15 px, сокращение палитры до 40 цветов, полная непрозрачность, ICO 16–256. Нужны Pillow и numpy. | `python scripts/build_logo_assets.py [исходник.png]`. |
+| `scripts/preview_logo.py` | Снимки окна Modern UI с логотипом (1180×850, 1180×720, 940×680; покой и прослушивание) и 60 кадров анимации рамки в `build/logo-preview/` без ядра. | `python -m scripts.preview_logo`. |
 | `scripts/screenshot_dashboard.py` | PNG-скриншот `DashboardWindow` через offscreen Qt + заглушечный bridge (без загрузки Whisper/TTS). | `python scripts/screenshot_dashboard.py`. |
 
 ### `config/` — пользовательские конфиги (overlay)
@@ -265,6 +267,7 @@ Python 3.10, Windows 10, CUDA 12.x. Зависимости: `requirements.txt`. 
 | Путь | Назначение |
 |---|---|
 | `assets/ack/*.wav` | Pre-rendered Silero ack-фразы по командам/фазам: `note_before/after`, `screenshot_after`, `pause_after`, `resume_after`, `mute/unmute_after`, `volume_up/down_after`, `seek_forward/backward_after`, `stop_after`, `cancel_after`, `question_before`, `reminder_before`, `translate_video_after/fail`. Проигрываются через `AudioPlayer` мгновенно. |
+| `assets/branding/shura_logo.png`, `shura_icon.png`, `shura_icon.ico` | Логотип Modern UI (спрайт 83×83 в родной пиксельной сетке) и иконка окна 16–256 px. Собираются `scripts/build_logo_assets.py` из `Pixel-Art Woman Eavesdropping.png`. |
 | `assets/yandex_translate_icon.png` | Шаблон кнопки «Перевести и озвучить» Яндекс.Браузера для `pyautogui.locateOnScreen` (скриншот в полноэкранном YouTube). |
 
 ### `docs/` — документация и тикеты
